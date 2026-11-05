@@ -17,8 +17,10 @@ import com.lifeos.app.LifeApp
 import com.lifeos.app.R
 import com.lifeos.app.container
 import com.lifeos.app.data.AppSettings
+import com.lifeos.app.data.NoteEntity
 import com.lifeos.app.data.SkinCatalog
 import com.lifeos.app.ui.robot.RobotMood
+import com.lifeos.app.widget.WidgetUpdater
 import java.util.Calendar
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -135,8 +137,14 @@ class AssistantService : Service() {
             }
             when (val r = listener.listen()) {
                 is SpeechResult.Heard -> {
-                    val rest = CommandParser.stripWakeWord(r.text, listOf(s.assistantName))
-                    if (rest != null) runSession(s, rest)
+                    val note = CommandParser.noteTrigger(r.text)
+                    if (note != null) {
+                        // «Сделать заметку …» без «LifeOS»: без робота и без экрана, сразу в запись
+                        quickNote(s, note)
+                    } else {
+                        val rest = CommandParser.stripWakeWord(r.text, listOf(s.assistantName))
+                        if (rest != null) runSession(s, rest)
+                    }
                 }
                 SpeechResult.Silence -> delay(250)
                 is SpeechResult.Error -> {
@@ -146,6 +154,36 @@ class AssistantService : Service() {
                     }
                     delay(1500)
                 }
+            }
+        }
+    }
+
+    /** Быстрая заметка голосом: сигнал, потом то, что вы скажете, сохраняется текстом. Экран трогать не нужно. */
+    private suspend fun quickNote(s: AppSettings, inline: String) {
+        var text = inline
+        if (text.isBlank()) {
+            beep()
+            text = when (val r = listener.listen()) {
+                is SpeechResult.Heard -> r.text.trim()
+                else -> ""
+            }
+        }
+        if (text.isBlank()) {
+            withTimeoutOrNull(10_000) { container.tts.speakAndWait("Ничего не слышно", s) }
+            return
+        }
+        container.dao.insertNote(NoteEntity(text = text, isVoice = true))
+        WidgetUpdater.refresh(this)
+        withTimeoutOrNull(10_000) { container.tts.speakAndWait("Заметка записана", s) }
+    }
+
+    private fun beep() {
+        runCatching {
+            val tone = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 80)
+            tone.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 150)
+            scope.launch {
+                delay(400)
+                tone.release()
             }
         }
     }

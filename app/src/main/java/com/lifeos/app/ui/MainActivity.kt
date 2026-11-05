@@ -54,6 +54,7 @@ class MainActivity : FragmentActivity() {
                 val s = container.settings.current()
                 if (s.wakeEnabled) AssistantControl.startListening(this@MainActivity)
                 if (s.morningEnabled) BriefScheduler.schedule(this@MainActivity, s.morningHour, s.morningMinute)
+                com.lifeos.app.reminder.ReminderScheduler.rescheduleAll(this@MainActivity)
             }
         }
     }

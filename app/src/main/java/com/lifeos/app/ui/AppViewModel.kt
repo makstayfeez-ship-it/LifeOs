@@ -23,6 +23,7 @@ import com.lifeos.app.data.RobotSkin
 import com.lifeos.app.data.ShoppingEntity
 import com.lifeos.app.data.TaskEntity
 import com.lifeos.app.data.toRussian
+import com.lifeos.app.reminder.ReminderScheduler
 import com.lifeos.app.security.SecureStore
 import com.lifeos.app.widget.WidgetUpdater
 import java.time.LocalDate
@@ -115,7 +116,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 .onSuccess {
                     if (c.auth.user.value?.cloud == true) {
                         // Вход: подтягиваем сохранённое. Регистрация: сразу сохраняем то, что уже есть.
-                        if (register) changed() else c.sync.restore()
+                        if (register) changed() else {
+                            c.sync.restore()
+                            ReminderScheduler.rescheduleAll(getApplication())
+                        }
                     }
                     done(null)
                 }
@@ -161,7 +165,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun restoreNow(done: (String) -> Unit) {
         viewModelScope.launch {
             c.sync.restore()
-                .onSuccess { found -> done(if (found) "Данные загружены из облака" else "В облаке пока нет копии") }
+                .onSuccess { found ->
+                    ReminderScheduler.rescheduleAll(getApplication())
+                    done(if (found) "Данные загружены из облака" else "В облаке пока нет копии") }
                 .onFailure { done(it.toRussian()) }
         }
     }
@@ -177,11 +183,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         c.dao.deleteNote(n)
     }
 
-    fun addTask(title: String, epochDay: Long, timeMinutes: Int?, isEvent: Boolean) =
-        io { c.dao.insertTask(TaskEntity(title = title, epochDay = epochDay, timeMinutes = timeMinutes, isEvent = isEvent)) }
+    fun addTask(title: String, epochDay: Long, timeMinutes: Int?, isEvent: Boolean) = io {
+        val task = TaskEntity(title = title, epochDay = epochDay, timeMinutes = timeMinutes, isEvent = isEvent)
+        val id = c.dao.insertTask(task)
+        ReminderScheduler.schedule(getApplication(), task.copy(id = id))
+    }
 
-    fun toggleTask(t: TaskEntity) = io { c.dao.updateTask(t.copy(done = !t.done)) }
-    fun deleteTask(t: TaskEntity) = io { c.dao.deleteTask(t) }
+    fun toggleTask(t: TaskEntity) = io {
+        val updated = t.copy(done = !t.done)
+        c.dao.updateTask(updated)
+        ReminderScheduler.schedule(getApplication(), updated)
+    }
+
+    fun deleteTask(t: TaskEntity) = io {
+        ReminderScheduler.cancel(getApplication(), t.id)
+        c.dao.deleteTask(t)
+    }
 
     fun addExpense(title: String, category: String, amount: Long, income: Boolean = false) =
         io { c.dao.insertExpense(ExpenseEntity(title = title, category = category, amountRub = amount, income = income)) }

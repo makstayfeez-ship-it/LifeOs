@@ -7,6 +7,7 @@ import com.lifeos.app.container
 import com.lifeos.app.data.AppSettings
 import com.lifeos.app.data.ExpenseEntity
 import com.lifeos.app.data.NoteEntity
+import com.lifeos.app.reminder.ReminderScheduler
 import com.lifeos.app.data.ShoppingEntity
 import com.lifeos.app.data.TaskEntity
 import java.time.LocalDate
@@ -83,9 +84,10 @@ class CommandExecutor(private val context: Context) {
 
     private suspend fun addTask(cmd: Command.AddTask): ExecResult {
         val day = LocalDate.now().plusDays(cmd.dayOffset.toLong())
-        c.dao.insertTask(
-            TaskEntity(title = cmd.title, epochDay = day.toEpochDay(), timeMinutes = cmd.timeMinutes),
-        )
+        val task = TaskEntity(title = cmd.title, epochDay = day.toEpochDay(), timeMinutes = cmd.timeMinutes)
+        val id = c.dao.insertTask(task)
+        // Задача со временем: телефон напомнит в эту минуту уведомлением со звуком
+        ReminderScheduler.schedule(context, task.copy(id = id))
         val whenText = buildString {
             when (cmd.dayOffset) {
                 1 -> append(" на завтра")
@@ -93,7 +95,9 @@ class CommandExecutor(private val context: Context) {
             }
             cmd.timeMinutes?.let { append(String.format(Locale.ROOT, " в %02d:%02d", it / 60, it % 60)) }
         }
-        return ExecResult("Задача добавлена: ${cmd.title}$whenText")
+        return ExecResult(
+            if (cmd.timeMinutes != null) "Напомню$whenText: ${cmd.title}" else "Задача добавлена: ${cmd.title}$whenText",
+        )
     }
 
     private suspend fun weather(s: AppSettings): String {

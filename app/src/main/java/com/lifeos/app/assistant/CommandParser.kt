@@ -92,6 +92,20 @@ object CommandParser {
         return null
     }
 
+    private val noteTriggerRx = Regex(
+        "^(?:сделай|сделать|создай|создать|запиши|записать|добавь|добавить|новая|новую|быстрая|быструю|надиктуй)" +
+            "\\s+(?:мне\\s+)?(?:голосовую\\s+)?заметк\\p{L}*(?:\\s+(?:что\\s+)?(.+))?$",
+    )
+
+    /**
+     * «Сделать заметку …» без обращения к помощнику: так можно начать запись, не называя «LifeOS».
+     * Возвращает текст заметки (пустой, если после фразы ничего не сказано) или null, если это не такая фраза.
+     */
+    fun noteTrigger(raw: String): String? {
+        val m = noteTriggerRx.find(normalize(raw)) ?: return null
+        return m.groupValues[1].trim()
+    }
+
     fun parse(raw: String, nowMinutes: Int): Command {
         val orig = raw.trim()
         val t = normalize(raw)
@@ -139,7 +153,10 @@ object CommandParser {
         Regex("^(?:добавь|создай|поставь|запиши)\\s+(?:мне\\s+)?(?:задачу|дело|задача)[\\s:,-]*(.+)$", RegexOption.IGNORE_CASE)
             .find(orig)?.let { return task(clean(it.groupValues[1]), nowMinutes) }
         Regex("^напомни(?:\\s+мне)?\\s+(.+)$", RegexOption.IGNORE_CASE)
-            .find(orig)?.let { return task(clean(it.groupValues[1]), nowMinutes) }
+            .find(orig)?.let { return task(clean(it.groupValues[1]), nowMinutes, remind = true) }
+
+        // «Сделай заметку» без текста: спрашиваем, что записать
+        if (noteTrigger(orig) == "") return Command.Clarify("Что записать?", "заметка")
 
         Regex("^(?:запиши|запомни|создай заметку|сделай заметку|добавь заметку|новая заметка|заметка|заметку)[\\s:,-]*(?:что\\s+)?(.+)$", RegexOption.IGNORE_CASE)
             .find(orig)?.let { return Command.AddNote(clean(it.groupValues[1])) }
@@ -154,15 +171,27 @@ object CommandParser {
     // ---------- задачи с датой ----------
 
     /** «завтра в 10 позвонить маме» → задача на завтра, 10:00, название «позвонить маме». */
-    private fun task(text: String, nowMinutes: Int): Command {
+    private fun task(text: String, nowMinutes: Int, remind: Boolean = false): Command {
         val t = normalize(text)
         val tk = if (t.isEmpty()) emptyList() else t.split(" ")
-        val day = when {
+        var day = when {
             tk.contains("послезавтра") -> 2
             tk.contains("завтра") -> 1
             else -> 0
         }
         val time = parseTime(t, tk, nowMinutes)
+        if (time != null) {
+            val minutes = time.first * 60 + time.second
+            val viaIdx = tk.indexOf("через")
+            if (viaIdx >= 0) {
+                // «через 30 минут» около полуночи может означать уже завтра
+                val sec = durationSeconds(tk.drop(viaIdx)) ?: 0
+                day += (nowMinutes + (sec + 59) / 60) / 1440
+            } else if (remind && day == 0 && !tk.contains("сегодня") && minutes <= nowMinutes) {
+                // «Напомни в 9», когда уже позже 9, значит завтра
+                day = 1
+            }
+        }
         // Границы слов задаём сами: \\b по-разному относится к кириллице в разных средах
         val start = "(?<![\\p{L}\\p{N}])"
         val end = "(?![\\p{L}\\p{N}])"

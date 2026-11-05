@@ -34,9 +34,13 @@ class LifeApp : Application() {
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_BRIEF, "Утренний обзор", NotificationManager.IMPORTANCE_DEFAULT),
         )
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_REMINDER, "Напоминания", NotificationManager.IMPORTANCE_HIGH),
+        )
     }
 
     companion object {
+        const val CHANNEL_REMINDER = "reminder"
         const val CHANNEL_ASSISTANT = "assistant"
         const val CHANNEL_BRIEF = "brief"
     }

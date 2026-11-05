@@ -126,6 +126,7 @@ class BootReceiver : BroadcastReceiver() {
             try {
                 val s = app.container.settings.current()
                 if (s.morningEnabled) BriefScheduler.schedule(app, s.morningHour, s.morningMinute)
+                com.lifeos.app.reminder.ReminderScheduler.rescheduleAll(app)
             } finally {
                 pending.finish()
             }
