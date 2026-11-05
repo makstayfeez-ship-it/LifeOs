@@ -1,0 +1,62 @@
+package com.lifeos.app
+
+import android.app.Application
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import androidx.room.Room
+import com.lifeos.app.assistant.TtsManager
+import com.lifeos.app.brief.MorningBriefBuilder
+import com.lifeos.app.brief.WeatherClient
+import com.lifeos.app.data.AuthRepository
+import com.lifeos.app.data.CloudSync
+import com.lifeos.app.data.DemoPurchaseGateway
+import com.lifeos.app.data.LifeDao
+import com.lifeos.app.data.LifeDatabase
+import com.lifeos.app.data.PurchaseGateway
+import com.lifeos.app.data.SettingsRepository
+
+class LifeApp : Application() {
+    lateinit var container: AppContainer
+        private set
+
+    override fun onCreate() {
+        super.onCreate()
+        container = AppContainer(this)
+        createChannels()
+    }
+
+    private fun createChannels() {
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_ASSISTANT, "Помощник", NotificationManager.IMPORTANCE_LOW),
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_BRIEF, "Утренний обзор", NotificationManager.IMPORTANCE_DEFAULT),
+        )
+    }
+
+    companion object {
+        const val CHANNEL_ASSISTANT = "assistant"
+        const val CHANNEL_BRIEF = "brief"
+    }
+}
+
+/** Простой ручной DI: всё общее лежит здесь, сервисы и экраны берут из одного места. */
+class AppContainer(context: Context) {
+    private val appContext = context.applicationContext
+
+    val db: LifeDatabase = Room.databaseBuilder(appContext, LifeDatabase::class.java, "lifeos.db").build()
+    val dao: LifeDao = db.dao()
+    val settings = SettingsRepository(appContext)
+    val auth = AuthRepository(appContext)
+    val sync = CloudSync(db, dao, settings, auth)
+    val weather = WeatherClient()
+    val purchases: PurchaseGateway = DemoPurchaseGateway()
+
+    val tts: TtsManager by lazy { TtsManager(appContext) }
+    val brief: MorningBriefBuilder by lazy { MorningBriefBuilder(this) }
+}
+
+val Context.container: AppContainer
+    get() = (applicationContext as LifeApp).container
