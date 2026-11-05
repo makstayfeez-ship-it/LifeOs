@@ -67,6 +67,7 @@ import com.lifeos.app.ui.components.PillButton
 import com.lifeos.app.ui.components.SectionTitle
 import com.lifeos.app.ui.components.SwitchRow
 import com.lifeos.app.ui.rememberMicRequest
+import com.lifeos.app.ui.rememberPermissionsRequest
 import com.lifeos.app.ui.rememberResumeTick
 import com.lifeos.app.ui.robot.RobotMood
 import com.lifeos.app.ui.robot.RobotView
@@ -205,6 +206,11 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
     val tick = rememberResumeTick()
     val overlayOk = remember(tick) { Perms.canOverlay(context) }
     val watcherOk = remember(tick) { Perms.watcherEnabled(context) }
+    val contactsOk = remember(tick) { Perms.hasContacts(context) }
+    val callOk = remember(tick) { Perms.hasCall(context) }
+    val askContacts = rememberPermissionsRequest(
+        arrayOf(android.Manifest.permission.READ_CONTACTS, android.Manifest.permission.CALL_PHONE),
+    )
 
     var name by remember(s.assistantName) { mutableStateOf(s.assistantName) }
     var key by remember(s.apiKey) { mutableStateOf(s.apiKey) }
@@ -306,6 +312,28 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
             watcherOk,
         ) { context.startActivity(Perms.accessibilitySettings()) }
 
+        PermissionRow(
+            "Контакты и звонки",
+            "Чтобы работало «позвони маме» и «напиши Ивану». Без этого робот только открывает набор номера.",
+            contactsOk && callOk,
+        ) { askContacts() }
+
+        SectionTitle("Что умеет робот")
+        Text(
+            "Говорите после «LifeOS» или «OS». Примеры:\n" +
+                "• «запиши купить хлеб», «добавь в покупки молоко», «потратил 300 на кофе»\n" +
+                "• «поставь будильник на 7:30», «таймер на 10 минут», «завтра в 10 напомни про врача»\n" +
+                "• «открой Телеграм», «позвони маме», «напиши Ивану привет»\n" +
+                "• «включи фонарик», «громче», «следующий трек», «пауза»\n" +
+                "• «проложи маршрут до вокзала», «найди в интернете рецепт борща», «сфотографируй»\n" +
+                "• «открой настройки Wi-Fi» (сам переключатель Android включать не даёт, откроет нужный экран)\n" +
+                "• «назад», «домой», «последние приложения», «шторка», «заблокируй экран» (нужен пункт «Робот видит экран»)\n" +
+                "• «который час», «сколько заряда», «какая погода», «что у меня сегодня», «прочитай заметки»\n" +
+                "• любой вопрос, если вставлен ключ ИИ",
+            color = GrayText,
+            style = MaterialTheme.typography.bodySmall,
+        )
+
         SectionTitle("Разговор с ИИ")
         Text(
             "Чтобы помощник отвечал на любые вопросы, вставьте ключ Anthropic API. Он хранится только на этом телефоне.",
@@ -322,10 +350,15 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
             outlined = true,
         )
 
-        SectionTitle("Заметка с выключенным экраном")
+        SectionTitle("Мгновенная заметка голосом")
         Text(
-            "Потяните шторку, нажмите «изменить» и добавьте плитку «Голосовая заметка»: один тап, и телефон слушает " +
-                "(работает и на экране блокировки). Либо включите прослушивание выше и скажите: «LifeOS, запиши …».",
+            "Любой способ записывает фразу и сразу сохраняет её, приложение открывать не нужно. " +
+                "Фраза «купить молоко» попадёт в покупки, «завтра в 10 позвонить врачу» в календарь, «потратил 300 на кофе» в финансы, остальное в заметки.\n" +
+                "• Плитка в шторке: потяните шторку вниз, нажмите карандаш и перетащите «Голосовая заметка» (работает и на экране блокировки).\n" +
+                "• Виджет-микрофон на рабочем столе: раздел «Виджеты».\n" +
+                "• Долгое нажатие на иконку LifeOS: «Голосовая заметка».\n" +
+                "• Кнопка «Заметка» в уведомлении, пока включено прослушивание.\n" +
+                "• Голосом: «LifeOS, запиши …», даже когда экран выключен.",
             color = GrayText,
             style = MaterialTheme.typography.bodySmall,
         )

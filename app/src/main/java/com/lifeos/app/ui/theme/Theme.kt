@@ -6,6 +6,12 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.foundation.background
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -30,6 +36,28 @@ val AccentChoices: List<Color> = listOf(
 
 val LocalAccent = compositionLocalOf { AccentChoices[0] }
 
+/** Включено ли мягкое свечение акцентного цвета в углу экрана (настройка «Оформление»). */
+val LocalGlow = compositionLocalOf { true }
+
+/** Фон экрана: тёмный цвет дизайн-системы и, если включено, мягкое свечение акцента сверху справа. */
+fun Modifier.lifeBackground(): Modifier = composed {
+    val glow = LocalGlow.current
+    val accent = LocalAccent.current
+    background(Bg).then(
+        if (glow) {
+            Modifier.drawBehind {
+                drawRect(
+                    Brush.radialGradient(
+                        listOf(accent.copy(alpha = 0.20f), Color.Transparent),
+                        center = Offset(size.width * 0.9f, 0f),
+                        radius = size.width * 0.95f,
+                    ),
+                )
+            }
+        } else Modifier,
+    )
+}
+
 // Типографика: Large Title, Title 1, Title 2, Headline, Body, Subhead, Caption.
 // Шрифт SF Pro нельзя ставить на Android, поэтому берётся системный.
 val LifeTypography = Typography(
@@ -43,7 +71,7 @@ val LifeTypography = Typography(
 )
 
 @Composable
-fun LifeTheme(accentIndex: Int, content: @Composable () -> Unit) {
+fun LifeTheme(accentIndex: Int, glow: Boolean = true, content: @Composable () -> Unit) {
     val accent = AccentChoices.getOrElse(accentIndex) { AccentChoices[0] }
     val scheme = darkColorScheme(
         primary = accent,
@@ -55,7 +83,7 @@ fun LifeTheme(accentIndex: Int, content: @Composable () -> Unit) {
         surfaceVariant = CardColor,
         onSurfaceVariant = GrayText,
     )
-    CompositionLocalProvider(LocalAccent provides accent) {
+    CompositionLocalProvider(LocalAccent provides accent, LocalGlow provides glow) {
         MaterialTheme(colorScheme = scheme, typography = LifeTypography, content = content)
     }
 }

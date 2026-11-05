@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Долгое нажатие на иконку LifeOS: мгновенная голосовая заметка -->
+    <shortcut
+        android:shortcutId="quick_note"
+        android:enabled="true"
+        android:icon="@drawable/ic_mic"
+        android:shortcutShortLabel="@string/shortcut_note"
+        android:shortcutLongLabel="@string/shortcut_note_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="com.lifeos.app.assistant.QuickNoteActivity"
+            android:targetPackage="com.lifeos.app" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="morning"
+        android:enabled="true"
+        android:icon="@drawable/ic_notification"
+        android:shortcutShortLabel="@string/shortcut_morning"
+        android:shortcutLongLabel="@string/shortcut_morning">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="com.lifeos.app.ui.MainActivity"
+            android:targetPackage="com.lifeos.app">
+            <extra
+                android:name="route"
+                android:value="morning" />
+        </intent>
+    </shortcut>
+</shortcuts>

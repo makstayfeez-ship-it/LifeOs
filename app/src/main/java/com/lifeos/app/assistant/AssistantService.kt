@@ -171,7 +171,7 @@ class AssistantService : Service() {
             val history = mutableListOf<Pair<String, String>>()
             while (turns++ < MAX_TURNS) {
                 if (text.isBlank()) {
-                    say("Я ничего не расслышала", s, RobotMood.THINKING)
+                    say("Повтори, пожалуйста", s, RobotMood.THINKING)
                     break
                 }
                 val cmd = CommandParser.parse(text, nowMinutes())
@@ -252,11 +252,18 @@ class AssistantService : Service() {
             Intent(this, AssistantService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE,
         )
+        val note = PendingIntent.getActivity(
+            this,
+            2,
+            Intent(this, QuickNoteActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
         return NotificationCompat.Builder(this, LifeApp.CHANNEL_ASSISTANT)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("LifeOS слушает")
             .setContentText("Скажите «LifeOS» или «OS», чтобы позвать помощника")
             .setContentIntent(open)
+            .addAction(0, "Заметка", note)
             .addAction(0, "Выключить", stop)
             .setOngoing(true)
             .build()

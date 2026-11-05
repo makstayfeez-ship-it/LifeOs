@@ -2,6 +2,7 @@ package com.lifeos.app.ui
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -39,7 +40,14 @@ import com.lifeos.app.ui.screens.HabitsScreen
 import com.lifeos.app.ui.screens.HomeScreen
 import com.lifeos.app.ui.screens.MorningScreen
 import com.lifeos.app.ui.screens.MorningSettingsScreen
+import com.lifeos.app.ui.screens.AccountScreen
+import com.lifeos.app.ui.screens.LockScreen
 import com.lifeos.app.ui.screens.NotesScreen
+import com.lifeos.app.ui.screens.NotificationsSettingsScreen
+import com.lifeos.app.ui.screens.PrivacyScreen
+import com.lifeos.app.ui.screens.SearchScreen
+import com.lifeos.app.ui.screens.SecurityScreen
+import com.lifeos.app.ui.screens.WidgetsScreen
 import com.lifeos.app.ui.screens.ProfileScreen
 import com.lifeos.app.ui.screens.RemindersScreen
 import com.lifeos.app.ui.screens.RobotShopScreen
@@ -58,7 +66,7 @@ fun AppNav(vm: AppViewModel) {
     val pending by vm.pendingRoute.collectAsState()
     val loggedIn = user != null
 
-    LifeTheme(settings.accent) {
+    LifeTheme(settings.accent, settings.glow) {
         val nav = rememberNavController()
         val entry by nav.currentBackStackEntryAsState()
         val route = entry?.destination?.route
@@ -90,6 +98,8 @@ fun AppNav(vm: AppViewModel) {
         val back: () -> Unit = { nav.popBackStack() }
         val showBar = route in BarRoutes
 
+        val locked by vm.locked.collectAsState()
+        Box {
         Scaffold(
             containerColor = Bg,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -137,10 +147,20 @@ fun AppNav(vm: AppViewModel) {
 
                 composable("theme") { ThemeScreen(vm, back) }
                 composable("extras") { ExtrasScreen(vm, back) }
+                composable("security") { SecurityScreen(vm, back) }
+                composable("widgets") { WidgetsScreen(back) }
+                composable("search") { SearchScreen(vm, go, back) }
+                composable("account") { AccountScreen(vm, back) }
+                composable("notif_settings") { NotificationsSettingsScreen(vm, back) }
+                composable("privacy") { PrivacyScreen(back) { go("security") } }
             }
         }
 
-        if (showAdd) QuickAddDialog(vm) { showAdd = false }
+        // Экран блокировки закрывает всё приложение, пока не введён PIN или не приложен палец
+        if (locked && loggedIn) LockScreen(vm)
+        }
+
+        if (showAdd && !(locked && loggedIn)) QuickAddDialog(vm) { showAdd = false }
     }
 }
 

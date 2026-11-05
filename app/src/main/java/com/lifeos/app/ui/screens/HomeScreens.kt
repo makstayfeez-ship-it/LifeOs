@@ -1,5 +1,6 @@
 package com.lifeos.app.ui.screens
 
+import android.content.Intent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,6 +27,10 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Loop
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Widgets
 import androidx.compose.material.icons.rounded.ShoppingCart
 import androidx.compose.material.icons.rounded.StickyNote2
 import androidx.compose.material.icons.rounded.Storefront
@@ -53,6 +58,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lifeos.app.assistant.AssistantControl
+import com.lifeos.app.assistant.QuickNoteActivity
 import com.lifeos.app.ui.AppViewModel
 import com.lifeos.app.ui.Fmt
 import com.lifeos.app.ui.components.InfoCard
@@ -65,6 +71,7 @@ import com.lifeos.app.ui.components.OutlineCard
 import com.lifeos.app.ui.components.SectionTitle
 import com.lifeos.app.ui.rememberMicRequest
 import com.lifeos.app.ui.theme.Bg
+import com.lifeos.app.ui.theme.lifeBackground
 import com.lifeos.app.ui.theme.CardColor
 import com.lifeos.app.ui.theme.GrayText
 import com.lifeos.app.ui.theme.LocalAccent
@@ -108,6 +115,10 @@ fun HomeScreen(vm: AppViewModel, go: (String) -> Unit) {
     var goalDialog by remember { mutableStateOf(false) }
     val accent = LocalAccent.current
     val callRobot = rememberMicRequest { AssistantControl.summon(context) }
+    // Мгновенная голосовая заметка: одно нажатие, говорите, окно само закроется
+    val quickNote = rememberMicRequest {
+        context.startActivity(Intent(context, QuickNoteActivity::class.java))
+    }
 
     val today = LocalDate.now()
     val todays = tasks.filter { it.epochDay == today.toEpochDay() }
@@ -117,7 +128,7 @@ fun HomeScreen(vm: AppViewModel, go: (String) -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(Bg)
+            .lifeBackground()
             .statusBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -132,7 +143,13 @@ fun HomeScreen(vm: AppViewModel, go: (String) -> Unit) {
                 )
             }
             Box(
-                Modifier.size(48.dp).clip(CircleShape).background(accent).clickable { callRobot() },
+                Modifier.size(48.dp).clip(CircleShape).background(CardColor).clickable { quickNote() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Rounded.StickyNote2, contentDescription = "Быстрая голосовая заметка", tint = accent)
+            }
+            Box(
+                Modifier.padding(start = 10.dp).size(48.dp).clip(CircleShape).background(accent).clickable { callRobot() },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(Icons.Rounded.Mic, contentDescription = "Позвать помощника", tint = Color.White)
@@ -140,11 +157,25 @@ fun HomeScreen(vm: AppViewModel, go: (String) -> Unit) {
         }
 
         Text(
-            "Нажмите на микрофон или скажите «${settings.assistantName}», «LifeOS» или «OS», чтобы позвать помощника",
+            "Блокнот: быстрая голосовая заметка. Микрофон: позвать помощника. Или скажите «${settings.assistantName}», «LifeOS» или «OS»",
             color = GrayText,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
         )
+
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(bottom = 14.dp)
+                .clip(RoundedCornerShape(26.dp))
+                .background(CardColor)
+                .clickable { go("search") }
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.Search, null, tint = GrayText)
+            Text("Поиск", color = GrayText, modifier = Modifier.padding(start = 10.dp))
+        }
 
         OutlineCard(Modifier.fillMaxWidth(), onClick = { go("calendar") }) {
             Text("Сегодня · ${Fmt.dayMonth(today)}", color = GrayText)
@@ -262,6 +293,10 @@ fun AppsScreen(go: (String) -> Unit) {
             Triple("Утренний обзор", Icons.Rounded.WbSunny, "morning"),
             Triple("Магазин роботов", Icons.Rounded.Storefront, "shop"),
             Triple("Оформление", Icons.Rounded.Palette, "theme"),
+            Triple("Виджеты", Icons.Rounded.Widgets, "widgets"),
+            Triple("Безопасность", Icons.Rounded.Lock, "security"),
+            Triple("Поиск", Icons.Rounded.Search, "search"),
+            Triple("Дополнительно", Icons.Rounded.Settings, "extras"),
         )
         items.chunked(3).forEach { row ->
             Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

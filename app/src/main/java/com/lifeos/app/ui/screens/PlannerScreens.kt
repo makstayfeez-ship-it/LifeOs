@@ -1,6 +1,19 @@
 package com.lifeos.app.ui.screens
 
 import androidx.compose.foundation.background
+import kotlinx.coroutines.delay
+import com.lifeos.app.audio.VoiceRecorder
+import com.lifeos.app.audio.VoicePlayer
+import com.lifeos.app.assistant.AssistantControl
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -338,6 +351,59 @@ fun NotesScreen(vm: AppViewModel, onBack: () -> Unit) {
     var partial by remember { mutableStateOf("") }
     var status by remember { mutableStateOf<String?>(null) }
 
+    // Запись звука (аудиофайл) и воспроизведение
+    val recorder = remember { VoiceRecorder(context) }
+    val player = remember { VoicePlayer(context) }
+    var audioOn by remember { mutableStateOf(false) }
+    var seconds by remember { mutableIntStateOf(0) }
+    val wave = remember { mutableStateListOf<Float>() }
+    var playingId by remember { mutableStateOf<Long?>(null) }
+    DisposableEffect(Unit) {
+        onDispose {
+            recorder.release()
+            player.stop()
+        }
+    }
+    LaunchedEffect(audioOn) {
+        if (audioOn) {
+            seconds = 0
+            wave.clear()
+            var ticks = 0
+            while (audioOn) {
+                delay(80)
+                wave.add(recorder.level())
+                if (wave.size > 40) wave.removeAt(0)
+                if (++ticks % 12 == 0) seconds++
+            }
+        }
+    }
+    fun finishAudio() {
+        audioOn = false
+        val name = recorder.stop()
+        if (name != null && seconds >= 1) {
+            vm.addVoiceNote("Запись звука · " + String.format(java.util.Locale.ROOT, "%d:%02d", seconds / 60, seconds % 60), name)
+            status = "Запись сохранена"
+        } else {
+            VoiceRecorder.delete(context, name)
+            status = "Запись слишком короткая"
+        }
+        // Прослушивание «LifeOS» возвращается после записи
+        if (vm.settings.value.wakeEnabled) AssistantControl.startListening(context)
+    }
+    val startAudio = rememberMicRequest {
+        if (!audioOn && !listening) {
+            // Микрофон один на всех: на время записи фоновое прослушивание отключается
+            if (vm.settings.value.wakeEnabled) AssistantControl.stop(context)
+            if (recorder.start()) {
+                audioOn = true
+                status = null
+            } else {
+                status = "Не удалось начать запись"
+                if (vm.settings.value.wakeEnabled) AssistantControl.startListening(context)
+            }
+        }
+    }
+
     val startRecording = rememberMicRequest {
         if (!listening) {
             listening = true
@@ -349,7 +415,7 @@ fun NotesScreen(vm: AppViewModel, onBack: () -> Unit) {
                         vm.addNote(r.text.trim())
                         status = "Записано"
                     }
-                    SpeechResult.Silence -> status = "Ничего не услышала"
+                    SpeechResult.Silence -> status = "Ничего не услышано"
                     is SpeechResult.Error -> status = "Не получилось записать"
                 }
                 listening = false
@@ -393,6 +459,30 @@ fun NotesScreen(vm: AppViewModel, onBack: () -> Unit) {
             style = MaterialTheme.typography.bodySmall,
         )
 
+        InfoCard(Modifier.fillMaxWidth().padding(top = 14.dp)) {
+            if (audioOn) {
+                Text(
+                    String.format(java.util.Locale.ROOT, "%d:%02d", seconds / 60, seconds % 60),
+                    color = Snow,
+                    style = MaterialTheme.typography.headlineLarge,
+                )
+                Canvas(Modifier.fillMaxWidth().height(48.dp).padding(vertical = 6.dp)) {
+                    val n = 40
+                    val step = size.width / n
+                    wave.forEachIndexed { i, v ->
+                        val h = (size.height * (0.1f + 0.9f * v)).coerceAtMost(size.height)
+                        val x = step * (n - wave.size + i) + step / 2
+                        drawLine(accent, Offset(x, (size.height - h) / 2), Offset(x, (size.height + h) / 2), strokeWidth = step * 0.6f, cap = StrokeCap.Round)
+                    }
+                }
+                PillButton("Остановить и сохранить", { finishAudio() }, Modifier.fillMaxWidth())
+            } else {
+                Text("Запись звука", color = Snow, style = MaterialTheme.typography.titleMedium)
+                Text("Сохранит аудио, которое потом можно прослушать. Для текста используйте микрофон выше.", color = GrayText, style = MaterialTheme.typography.bodySmall)
+                PillButton("Записать звук", { startAudio() }, Modifier.fillMaxWidth().padding(top = 8.dp), outlined = true, enabled = !listening)
+            }
+        }
+
         Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) { LifeField(text, { text = it }, "Или напишите заметку") }
             Box(Modifier.padding(start = 8.dp)) {
@@ -414,7 +504,32 @@ fun NotesScreen(vm: AppViewModel, onBack: () -> Unit) {
                             Text(Fmt.dateTime(n.createdAt), color = GrayText, style = MaterialTheme.typography.bodySmall)
                         }
                     }
-                    IconButton(onClick = { vm.deleteNote(n) }) { Icon(Icons.Rounded.Close, "Удалить", tint = GrayText) }
+                    if (n.audioPath != null) {
+                        val playing = playingId == n.id
+                        IconButton(onClick = {
+                            if (playing) {
+                                player.stop()
+                                playingId = null
+                            } else if (player.play(n.audioPath) { playingId = null }) {
+                                playingId = n.id
+                            } else {
+                                status = "Файла записи нет на этом телефоне"
+                            }
+                        }) {
+                            Icon(
+                                if (playing) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
+                                if (playing) "Остановить" else "Воспроизвести",
+                                tint = accent,
+                            )
+                        }
+                    }
+                    IconButton(onClick = {
+                        if (playingId == n.id) {
+                            player.stop()
+                            playingId = null
+                        }
+                        vm.deleteNote(n)
+                    }) { Icon(Icons.Rounded.Close, "Удалить", tint = GrayText) }
                 }
             }
         }

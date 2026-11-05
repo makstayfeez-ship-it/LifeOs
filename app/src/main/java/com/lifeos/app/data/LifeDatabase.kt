@@ -48,8 +48,11 @@ interface LifeDao {
     @Query("SELECT * FROM expenses ORDER BY createdAt DESC")
     fun expenses(): Flow<List<ExpenseEntity>>
 
-    @Query("SELECT COALESCE(SUM(amountRub), 0) FROM expenses WHERE createdAt >= :from AND createdAt < :to")
+    @Query("SELECT COALESCE(SUM(amountRub), 0) FROM expenses WHERE income = 0 AND createdAt >= :from AND createdAt < :to")
     suspend fun spentBetween(from: Long, to: Long): Long
+
+    @Query("SELECT COALESCE(SUM(amountRub), 0) FROM expenses WHERE income = 1 AND createdAt >= :from AND createdAt < :to")
+    suspend fun incomeBetween(from: Long, to: Long): Long
 
     @Insert
     suspend fun insertExpense(expense: ExpenseEntity): Long

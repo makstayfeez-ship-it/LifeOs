@@ -19,7 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.lifeos.app.container
 import com.lifeos.app.data.AppSettings
-import com.lifeos.app.data.NoteEntity
+import com.lifeos.app.widget.WidgetUpdater
+import java.util.Calendar
 import com.lifeos.app.ui.components.InfoCard
 import com.lifeos.app.ui.theme.GrayText
 import com.lifeos.app.ui.theme.LifeTheme
@@ -28,11 +29,13 @@ import com.lifeos.app.ui.theme.Snow
 import kotlinx.coroutines.delay
 
 /**
- * Быстрая голосовая заметка без входа в приложение: открывается из плитки в шторке
- * (в том числе поверх экрана блокировки), слушает одну фразу, сохраняет и закрывается.
+ * Мгновенная запись без входа в приложение. Открывается из виджета, плитки в шторке, ярлыка на иконке
+ * или кнопки в уведомлении (в том числе поверх экрана блокировки), слушает одну фразу, сохраняет и закрывается.
+ * Понимает «купить молоко», «завтра в 10 позвонить врачу», «потратил 300 на кофе», «будильник на 7»; остальное пишет заметкой.
  */
 class QuickNoteActivity : ComponentActivity() {
     private lateinit var listener: SpeechListener
+    private val executor by lazy { CommandExecutor(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,11 +55,18 @@ class QuickNoteActivity : ComponentActivity() {
                     }
                     when (val r = listener.listen { partial = it }) {
                         is SpeechResult.Heard -> {
-                            container.dao.insertNote(NoteEntity(text = r.text.trim(), isVoice = true))
-                            partial = r.text.trim()
-                            status = "Записано"
+                            val text = r.text.trim()
+                            partial = text
+                            val now = Calendar.getInstance()
+                            // «Купить молоко» → покупки, «завтра в 10 позвонить» → задача, иначе просто заметка
+                            status = executor.quickCapture(
+                                text,
+                                container.settings.current(),
+                                now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE),
+                            )
+                            WidgetUpdater.refresh(this@QuickNoteActivity)
                         }
-                        SpeechResult.Silence -> status = "Ничего не услышала"
+                        SpeechResult.Silence -> status = "Ничего не услышано"
                         is SpeechResult.Error -> status = "Не получилось записать"
                     }
                     delay(1400)

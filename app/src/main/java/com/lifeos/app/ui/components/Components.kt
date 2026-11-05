@@ -54,6 +54,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lifeos.app.ui.theme.Bg
+import com.lifeos.app.ui.theme.lifeBackground
 import com.lifeos.app.ui.theme.CardColor
 import com.lifeos.app.ui.theme.Disabled
 import com.lifeos.app.ui.theme.GrayText
@@ -69,7 +70,7 @@ fun LifeScreen(
     scroll: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(Modifier.fillMaxSize().background(Bg).statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().lifeBackground().statusBarsPadding()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,

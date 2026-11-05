@@ -4,4 +4,13 @@
     <string name="tile_note">Голосовая заметка</string>
     <string name="a11y_label">LifeOS: робот видит экран</string>
     <string name="a11y_description">Позволяет роботу LifeOS видеть, где на экране кнопки и поля, чтобы не загораживать их. Текст экрана никуда не отправляется и не сохраняется.</string>
+    <string name="widget_note_hint">Заметка</string>
+    <string name="widget_note_desc">Одно нажатие, и телефон слушает заметку</string>
+    <string name="widget_today_desc">Дела и события на сегодня</string>
+    <string name="widget_finance_desc">Расходы за месяц</string>
+    <string name="shortcut_note">Заметка</string>
+    <string name="shortcut_note_long">Голосовая заметка</string>
+    <string name="shortcut_morning">Утренний обзор</string>
+    <string name="wallpaper_label">LifeOS: живые обои</string>
+    <string name="wallpaper_desc">Тёмный фон с плавно дрейфующим свечением в цвете вашего акцента</string>
 </resources>

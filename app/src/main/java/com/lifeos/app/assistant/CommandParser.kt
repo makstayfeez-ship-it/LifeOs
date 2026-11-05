@@ -6,7 +6,8 @@ sealed interface Command {
     data class SetTimer(val seconds: Int) : Command
     data class AddNote(val text: String) : Command
     data class AddShopping(val item: String) : Command
-    data class AddTask(val title: String) : Command
+    /** dayOffset: 0 — сегодня, 1 — завтра, 2 — послезавтра. */
+    data class AddTask(val title: String, val dayOffset: Int = 0, val timeMinutes: Int? = null) : Command
     data class AddExpense(val amountRub: Long, val category: String, val title: String) : Command
 
     /** Не хватило данных (например, времени для будильника). kind: "будильник" или "таймер". */
@@ -14,6 +15,33 @@ sealed interface Command {
 
     data object Brief : Command
     data object Dismiss : Command
+
+    // ---- Управление телефоном ----
+    data class OpenApp(val name: String) : Command
+    data class Call(val who: String) : Command
+    data class Sms(val who: String, val text: String) : Command
+    data class Flashlight(val on: Boolean) : Command
+
+    /** dir: 1 — громче, -1 — тише, 0 — без звука. */
+    data class Volume(val dir: Int) : Command
+
+    /** action: play, pause, next, prev. */
+    data class Media(val action: String) : Command
+    data class Navigate(val place: String) : Command
+    data class WebSearch(val query: String) : Command
+    data object Camera : Command
+
+    /** page: wifi, bluetooth, airplane, location, display, sound, battery, general. */
+    data class OpenSettings(val page: String) : Command
+
+    /** action: back, home, recents, notifications, lock, screenshot. */
+    data class Global(val action: String) : Command
+
+    /** kind: time, date, battery. */
+    data class Info(val kind: String) : Command
+    data object Weather : Command
+    data object ReadNotes : Command
+    data object ReadShopping : Command
 
     /** Всё остальное уходит в ИИ для обычного разговора. */
     data class Chat(val text: String) : Command
@@ -86,6 +114,8 @@ object CommandParser {
             else Command.Clarify("На какое время поставить будильник?", "будильник")
         }
 
+        deviceCommand(orig, t)?.let { return it }
+
         // Покупки проверяем раньше заметок: «запиши молоко в список покупок».
         val shoppingPatterns = listOf(
             Regex("^(?:добавь|добавить|положи|запиши|внеси)\\s+(.+?)\\s+(?:в|на)\\s+(?:мой\\s+|наш\\s+)?(?:список\\s+)?(?:покуп\\p{L}*|корзину)\\s*$", RegexOption.IGNORE_CASE),
@@ -107,9 +137,9 @@ object CommandParser {
             }
 
         Regex("^(?:добавь|создай|поставь|запиши)\\s+(?:мне\\s+)?(?:задачу|дело|задача)[\\s:,-]*(.+)$", RegexOption.IGNORE_CASE)
-            .find(orig)?.let { return Command.AddTask(clean(it.groupValues[1])) }
+            .find(orig)?.let { return task(clean(it.groupValues[1]), nowMinutes) }
         Regex("^напомни(?:\\s+мне)?\\s+(.+)$", RegexOption.IGNORE_CASE)
-            .find(orig)?.let { return Command.AddTask(clean(it.groupValues[1])) }
+            .find(orig)?.let { return task(clean(it.groupValues[1]), nowMinutes) }
 
         Regex("^(?:запиши|запомни|создай заметку|сделай заметку|добавь заметку|новая заметка|заметка|заметку)[\\s:,-]*(?:что\\s+)?(.+)$", RegexOption.IGNORE_CASE)
             .find(orig)?.let { return Command.AddNote(clean(it.groupValues[1])) }
@@ -119,6 +149,90 @@ object CommandParser {
         }
 
         return Command.Chat(orig)
+    }
+
+    // ---------- задачи с датой ----------
+
+    /** «завтра в 10 позвонить маме» → задача на завтра, 10:00, название «позвонить маме». */
+    private fun task(text: String, nowMinutes: Int): Command {
+        val t = normalize(text)
+        val tk = if (t.isEmpty()) emptyList() else t.split(" ")
+        val day = when {
+            tk.contains("послезавтра") -> 2
+            tk.contains("завтра") -> 1
+            else -> 0
+        }
+        val time = parseTime(t, tk, nowMinutes)
+        // Границы слов задаём сами: \\b по-разному относится к кириллице в разных средах
+        val start = "(?<![\\p{L}\\p{N}])"
+        val end = "(?![\\p{L}\\p{N}])"
+        var title = text
+            .replace(Regex("(?i)" + start + "(?:послезавтра|завтра|сегодня)" + end), " ")
+            .replace(Regex("(?i)" + start + "(?:в|на|к)\\s+\\d{1,2}(?:[: .]\\d{2})?(?:\\s*(?:утра|дня|вечера|ночи))?(?![\\d:])"), " ")
+            .replace(Regex("(?i)" + start + "через\\s+\\S+\\s+\\p{L}+"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim(' ', ',', '.')
+        if (title.isBlank()) title = clean(text)
+        return Command.AddTask(title, day, time?.let { it.first * 60 + it.second })
+    }
+
+    // ---------- функции телефона ----------
+
+    private fun has(t: String, pattern: String) = Regex(pattern).containsMatchIn(t)
+
+    private fun deviceCommand(orig: String, t: String): Command? {
+        // Фонарик
+        if (has(t, "фонарик|фонарь|вспышк")) {
+            return Command.Flashlight(!has(t, "выключ|погас|отключ|убери|потуши"))
+        }
+        // Громкость
+        if (has(t, "^(?:сделай )?(?:погромче|громче)|увелич\\p{L}* (?:громкость|звук)|прибавь (?:громкость|звук)")) return Command.Volume(1)
+        if (has(t, "^(?:сделай )?(?:потише|тише)|убав\\p{L}* (?:громкость|звук)|уменьш\\p{L}* (?:громкость|звук)")) return Command.Volume(-1)
+        if (has(t, "без звука|(?:выключи|отключи) звук|беззвучн")) return Command.Volume(0)
+        // Музыка
+        if (has(t, "следующ\\p{L}* (?:трек|песн\\p{L}*|композиц\\p{L}*)|переключи (?:трек|песню)")) return Command.Media("next")
+        if (has(t, "предыдущ\\p{L}* (?:трек|песн\\p{L}*|композиц\\p{L}*)")) return Command.Media("prev")
+        if (has(t, "^(?:поставь )?(?:на )?паузу?$|поставь на паузу|останови музыку|выключи музыку|стоп музык")) return Command.Media("pause")
+        if (has(t, "включи музыку|продолжи музыку|воспроизведи музыку|играй музыку")) return Command.Media("play")
+        // Камера
+        if (has(t, "сделай (?:фото|снимок|селфи)|(?:открой|включи) камеру")) return Command.Camera
+        // Системные кнопки (нужен включённый сервис «Робот видит экран»)
+        if (has(t, "скриншот|снимок экрана|сделай скрин")) return Command.Global("screenshot")
+        if (has(t, "^(?:нажми )?назад$|вернись назад")) return Command.Global("back")
+        if (has(t, "на главный экран|^(?:нажми )?домой$|рабочий стол")) return Command.Global("home")
+        if (has(t, "недавние приложения|последние приложения")) return Command.Global("recents")
+        if (has(t, "заблокируй (?:экран|телефон)|блокировк\\p{L}* экрана")) return Command.Global("lock")
+        if (has(t, "(?:открой|покажи) (?:шторку|уведомления)")) return Command.Global("notifications")
+        // Сведения
+        if (has(t, "который час|сколько времени|скажи время|сколько сейчас времени")) return Command.Info("time")
+        if (has(t, "какое (?:сегодня )?число|какой сегодня день|какая сегодня дата")) return Command.Info("date")
+        if (has(t, "заряд батареи|уровень заряда|сколько (?:у меня )?заряда|сколько процентов")) return Command.Info("battery")
+        if (has(t, "погод") && !has(t, "обзор|сводк")) return Command.Weather
+        // Заметки и покупки вслух
+        if (has(t, "(?:прочитай|прочти|покажи|что в|какие у меня|что у меня в)\\s+(?:мои\\s+|моих\\s+)?заметк")) return Command.ReadNotes
+        if (has(t, "(?:прочитай|прочти|покажи|что в|что у меня в)\\s+(?:мо[йеё]м?\\s+)?(?:списк\\p{L}*\\s+покуп|покупк)")) return Command.ReadShopping
+        // Настройки телефона: включить их программно Android не разрешает, поэтому открываем нужную страницу
+        if (has(t, "вай ?фай|wi ?fi")) return Command.OpenSettings("wifi")
+        if (has(t, "блютуз|блютус|bluetooth")) return Command.OpenSettings("bluetooth")
+        if (has(t, "режим полета|авиарежим|в самолете")) return Command.OpenSettings("airplane")
+        if (has(t, "геолокаци|местоположени|\\bgps\\b")) return Command.OpenSettings("location")
+        if (has(t, "яркост")) return Command.OpenSettings("display")
+        if (has(t, "настройки звука|режим звука")) return Command.OpenSettings("sound")
+        if (has(t, "экономи\\p{L}* (?:заряда|батаре)")) return Command.OpenSettings("battery")
+        if (has(t, "^(?:открой )?настройки(?: телефона)?$")) return Command.OpenSettings("general")
+
+        // Навигация, поиск, звонок, SMS, запуск приложений
+        Regex("^(?:проложи маршрут|построй маршрут|навигация|маршрут|как доехать|как добраться|поехали)\\s*(?:до|к|в|на)?\\s*(.+)$", RegexOption.IGNORE_CASE)
+            .find(orig)?.let { return Command.Navigate(clean(it.groupValues[1])) }
+        Regex("^(?:найди|поищи|загугли|погугли|поиск)\\s+(?:в интернете\\s+|в гугле\\s+|в google\\s+)?(.+)$", RegexOption.IGNORE_CASE)
+            .find(orig)?.let { return Command.WebSearch(clean(it.groupValues[1])) }
+        Regex("^(?:напиши|отправь|пошли)\\s+(?:смс|sms|сообщение)\\s+(?:для\\s+|на\\s+)?(\\S+)(?:\\s+(?:что\\s+|текст\\s+)?(.+))?$", RegexOption.IGNORE_CASE)
+            .find(orig)?.let { return Command.Sms(clean(it.groupValues[1]), clean(it.groupValues[2])) }
+        Regex("^(?:позвони|набери|вызови|звони)\\s+(?:на\\s+номер\\s+)?(.+)$", RegexOption.IGNORE_CASE)
+            .find(orig)?.let { return Command.Call(clean(it.groupValues[1])) }
+        Regex("^(?:открой|запусти|включи|покажи)\\s+(?:приложение\\s+)?(.+)$", RegexOption.IGNORE_CASE)
+            .find(orig)?.let { return Command.OpenApp(clean(it.groupValues[1])) }
+        return null
     }
 
     private fun clean(s: String): String = s.trim().trimEnd('.', '!', '?', ',', ' ')

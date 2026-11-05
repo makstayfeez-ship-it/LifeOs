@@ -53,6 +53,7 @@ class CloudSync(
                 "updatedAt" to System.currentTimeMillis(),
             ),
         ).await()
+        settings.update { it.copy(lastBackup = System.currentTimeMillis()) }
     }
 
     /** Возвращает true, если в облаке была копия и она загружена. */

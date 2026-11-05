@@ -1,6 +1,7 @@
 package com.lifeos.app.ui
 
 import android.app.Application
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lifeos.app.AppContainer
@@ -9,6 +10,7 @@ import com.lifeos.app.assistant.AssistantControl
 import com.lifeos.app.assistant.Command
 import com.lifeos.app.assistant.CommandExecutor
 import com.lifeos.app.assistant.CommandParser
+import com.lifeos.app.audio.VoiceRecorder
 import com.lifeos.app.brief.Brief
 import com.lifeos.app.brief.BriefScheduler
 import com.lifeos.app.data.AppSettings
@@ -21,6 +23,8 @@ import com.lifeos.app.data.RobotSkin
 import com.lifeos.app.data.ShoppingEntity
 import com.lifeos.app.data.TaskEntity
 import com.lifeos.app.data.toRussian
+import com.lifeos.app.security.SecureStore
+import com.lifeos.app.widget.WidgetUpdater
 import java.time.LocalDate
 import java.util.Calendar
 import kotlinx.coroutines.Job
@@ -50,6 +54,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val habitLogs = c.dao.habitLogs().state(emptyList())
     val documents = c.dao.documents().state(emptyList())
 
+    // ---------- блокировка ----------
+
+    /** Пока настройки не прочитаны, приложение считается закрытым; если PIN не включён, замок сразу снимается. */
+    val locked = MutableStateFlow(true)
+    private var leftAt = 0L
+
+    init {
+        viewModelScope.launch { locked.value = c.settings.current().lockEnabled }
+    }
+
+    fun unlock() {
+        locked.value = false
+    }
+
+    fun onAppStopped() {
+        leftAt = SystemClock.elapsedRealtime()
+    }
+
+    /** Возврат в приложение: если отсутствовали дольше LOCK_DELAY_MS, снова просим PIN. */
+    fun onAppStarted() {
+        if (leftAt != 0L && settings.value.lockEnabled && SystemClock.elapsedRealtime() - leftAt > LOCK_DELAY_MS) {
+            locked.value = true
+        }
+    }
+
     /** Куда открыть приложение по нажатию на уведомление. */
     val pendingRoute = MutableStateFlow<String?>(null)
 
@@ -59,6 +88,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** После любого изменения данные через несколько секунд уходят в облако (если вошли в облачный аккаунт). */
     private fun changed() {
+        WidgetUpdater.refresh(getApplication())
         if (c.auth.user.value?.cloud != true) return
         backupJob?.cancel()
         backupJob = viewModelScope.launch {
@@ -89,6 +119,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     done(null)
                 }
+                .onFailure { done(it.toRussian()) }
+        }
+    }
+
+    fun updateName(name: String, done: (String) -> Unit) {
+        viewModelScope.launch {
+            c.auth.updateName(name.trim())
+                .onSuccess { done("Имя сохранено") }
                 .onFailure { done(it.toRussian()) }
         }
     }
@@ -131,7 +169,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- данные ----------
 
     fun addNote(text: String) = io { c.dao.insertNote(NoteEntity(text = text)) }
-    fun deleteNote(n: NoteEntity) = io { c.dao.deleteNote(n) }
+    fun addVoiceNote(text: String, audioPath: String) =
+        io { c.dao.insertNote(NoteEntity(text = text, isVoice = true, audioPath = audioPath)) }
+
+    fun deleteNote(n: NoteEntity) = io {
+        VoiceRecorder.delete(getApplication(), n.audioPath)
+        c.dao.deleteNote(n)
+    }
 
     fun addTask(title: String, epochDay: Long, timeMinutes: Int?, isEvent: Boolean) =
         io { c.dao.insertTask(TaskEntity(title = title, epochDay = epochDay, timeMinutes = timeMinutes, isEvent = isEvent)) }
@@ -139,8 +183,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleTask(t: TaskEntity) = io { c.dao.updateTask(t.copy(done = !t.done)) }
     fun deleteTask(t: TaskEntity) = io { c.dao.deleteTask(t) }
 
-    fun addExpense(title: String, category: String, amount: Long) =
-        io { c.dao.insertExpense(ExpenseEntity(title = title, category = category, amountRub = amount)) }
+    fun addExpense(title: String, category: String, amount: Long, income: Boolean = false) =
+        io { c.dao.insertExpense(ExpenseEntity(title = title, category = category, amountRub = amount, income = income)) }
 
     fun deleteExpense(e: ExpenseEntity) = io { c.dao.deleteExpense(e) }
 
@@ -161,8 +205,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (doneNow) c.dao.deleteHabitLog(log) else c.dao.insertHabitLog(log)
     }
 
-    fun addDocument(title: String, category: String) = io { c.dao.insertDocument(DocumentEntity(title = title, category = category)) }
-    fun deleteDocument(d: DocumentEntity) = io { c.dao.deleteDocument(d) }
+    fun addDocument(title: String, category: String, filePath: String? = null, mime: String? = null) =
+        io { c.dao.insertDocument(DocumentEntity(title = title, category = category, filePath = filePath, mime = mime)) }
+
+    fun deleteDocument(d: DocumentEntity) = io {
+        SecureStore.delete(getApplication(), d.filePath)
+        c.dao.deleteDocument(d)
+    }
 
     // ---------- настройки ----------
 
@@ -233,5 +282,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openRoute(route: String?) {
         pendingRoute.value = route
+    }
+
+    companion object {
+        private const val LOCK_DELAY_MS = 10_000L
     }
 }

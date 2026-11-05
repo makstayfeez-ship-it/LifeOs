@@ -74,7 +74,7 @@ class MorningBriefReceiver : BroadcastReceiver() {
 
                 val name = c.auth.user.value?.name.orEmpty()
                 val brief = withTimeoutOrNull(8_000) { c.brief.build(name, s) } ?: return@launch
-                notify(app, brief)
+                notify(app, brief, s.hideLockNotifs)
                 if (s.speakBrief) c.tts.speak(brief.spoken(), s)
             } finally {
                 pending.finish()
@@ -82,7 +82,7 @@ class MorningBriefReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun notify(context: Context, brief: Brief) {
+    private fun notify(context: Context, brief: Brief, hideOnLock: Boolean) {
         val open = PendingIntent.getActivity(
             context,
             0,
@@ -99,6 +99,19 @@ class MorningBriefReceiver : BroadcastReceiver() {
             .setStyle(NotificationCompat.BigTextStyle().bigText(lines.joinToString("\n")))
             .setContentIntent(open)
             .setAutoCancel(true)
+            .apply {
+                if (hideOnLock) {
+                    // На заблокированном экране вместо дел и сумм показывается нейтральный текст
+                    setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                    setPublicVersion(
+                        NotificationCompat.Builder(context, LifeApp.CHANNEL_BRIEF)
+                            .setSmallIcon(R.drawable.ic_notification)
+                            .setContentTitle("Утренний обзор")
+                            .setContentText("Разблокируйте телефон, чтобы посмотреть")
+                            .build(),
+                    )
+                }
+            }
             .build()
         runCatching { NotificationManagerCompat.from(context).notify(2001, n) }
     }
