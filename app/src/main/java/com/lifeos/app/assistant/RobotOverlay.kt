@@ -85,7 +85,7 @@ class RobotOverlay(private val context: Context) {
     var onTap: () -> Unit = {}
 
     private var skin by mutableStateOf<RobotSkin>(SkinCatalog.default)
-    private var mood by mutableStateOf(RobotMood.HAPPY)
+    private var currentMood by mutableStateOf(RobotMood.HAPPY)
     private var bubble by mutableStateOf<String?>(null)
     private var walking by mutableStateOf(false)
     private var facingRight by mutableStateOf(true)
@@ -145,7 +145,7 @@ class RobotOverlay(private val context: Context) {
     }
 
     fun setMood(m: RobotMood) {
-        mood = m
+        currentMood = m
     }
 
     /** Показывает реплику над роботом. null — убрать. */
@@ -320,7 +320,7 @@ class RobotOverlay(private val context: Context) {
             }
             RobotView(
                 skin = skin,
-                mood = mood,
+                mood = currentMood,
                 walking = walking,
                 facingRight = facingRight,
                 modifier = Modifier
