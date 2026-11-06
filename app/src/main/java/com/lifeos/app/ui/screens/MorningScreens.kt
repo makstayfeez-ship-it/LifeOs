@@ -97,7 +97,7 @@ fun MorningScreen(vm: AppViewModel, onBack: () -> Unit, onSettings: () -> Unit) 
             BriefCard(Icons.Rounded.Loop, "Привычки", listOf("Сегодня ${b.habitsDone} из ${b.habitsTotal}"))
         }
         if (b.goalTitle != null && b.goalProgress != null) {
-            BriefCard(Icons.Rounded.Flag, "Прогресс цели", listOf("${b.goalTitle}: ${b.goalProgress}%"))
+            BriefCard(Icons.Rounded.Flag, "Цель на год", listOf("${b.goalTitle}: ${b.goalProgress}%"))
         }
 
         Row(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -132,6 +132,19 @@ fun MorningSettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
     var cityMessage by remember { mutableStateOf<String?>(null) }
 
     LifeScreen("Настройки обзора", onBack = onBack) {
+        SwitchRow(
+            "Показывать на экране блокировки",
+            s.briefOnLock,
+            { on -> vm.update { it.copy(briefOnLock = on) } },
+            subtitle = "Когда вы утром включите телефон, появится красивый обзор: погода, дела, привычки, цель. " +
+                "Нужно разрешение «Поверх других приложений», и лучше включить прослушивание помощника, чтобы система не выгружала LifeOS.",
+        )
+        PillButton(
+            "Показать, как это выглядит",
+            { context.startActivity(android.content.Intent(context, com.lifeos.app.brief.MorningLockActivity::class.java)) },
+            Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            outlined = true,
+        )
         SwitchRow(
             "Показывать каждое утро",
             s.morningEnabled,
@@ -186,7 +199,7 @@ fun MorningSettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
         SwitchRow("Задачи", s.briefTasks, { on -> vm.update { it.copy(briefTasks = on) } })
         SwitchRow("Расходы за вчера", s.briefSpending, { on -> vm.update { it.copy(briefSpending = on) } })
         SwitchRow("Привычки", s.briefHabits, { on -> vm.update { it.copy(briefHabits = on) } })
-        SwitchRow("Цель месяца", s.briefGoal, { on -> vm.update { it.copy(briefGoal = on) } })
+        SwitchRow("Цель года", s.briefGoal, { on -> vm.update { it.copy(briefGoal = on) } })
 
         SectionTitle("Озвучка")
         SwitchRow(

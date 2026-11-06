@@ -24,6 +24,13 @@ class LifeApp : Application() {
         super.onCreate()
         container = AppContainer(this)
         createChannels()
+        // Утренний обзор на экране блокировки: ловим включение экрана (работает, пока приложение живо в памяти)
+        androidx.core.content.ContextCompat.registerReceiver(
+            this,
+            com.lifeos.app.brief.ScreenOnReceiver(),
+            android.content.IntentFilter(android.content.Intent.ACTION_SCREEN_ON),
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
     }
 
     private fun createChannels() {
@@ -34,9 +41,13 @@ class LifeApp : Application() {
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_BRIEF, "Утренний обзор", NotificationManager.IMPORTANCE_DEFAULT),
         )
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_REMINDER, "Напоминания", NotificationManager.IMPORTANCE_HIGH),
+        )
     }
 
     companion object {
+        const val CHANNEL_REMINDER = "reminder"
         const val CHANNEL_ASSISTANT = "assistant"
         const val CHANNEL_BRIEF = "brief"
     }

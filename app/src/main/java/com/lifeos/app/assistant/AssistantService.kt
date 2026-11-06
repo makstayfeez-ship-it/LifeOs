@@ -17,8 +17,10 @@ import com.lifeos.app.LifeApp
 import com.lifeos.app.R
 import com.lifeos.app.container
 import com.lifeos.app.data.AppSettings
+import com.lifeos.app.data.NoteEntity
 import com.lifeos.app.data.SkinCatalog
 import com.lifeos.app.ui.robot.RobotMood
+import com.lifeos.app.widget.WidgetUpdater
 import java.util.Calendar
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -135,8 +137,14 @@ class AssistantService : Service() {
             }
             when (val r = listener.listen()) {
                 is SpeechResult.Heard -> {
-                    val rest = CommandParser.stripWakeWord(r.text, listOf(s.assistantName))
-                    if (rest != null) runSession(s, rest)
+                    val note = CommandParser.noteTrigger(r.text)
+                    if (note != null) {
+                        // «Сделать заметку …» без «LifeOS»: без робота и без экрана, сразу в запись
+                        quickNote(s, note)
+                    } else {
+                        val rest = CommandParser.stripWakeWord(r.text, listOf(s.assistantName))
+                        if (rest != null) runSession(s, rest)
+                    }
                 }
                 SpeechResult.Silence -> delay(250)
                 is SpeechResult.Error -> {
@@ -148,6 +156,28 @@ class AssistantService : Service() {
                 }
             }
         }
+    }
+
+    /** Быстрая заметка голосом: сигнал, диктовка до паузы, потом текст сохраняется в заметки. Экран не нужен. */
+    private suspend fun quickNote(s: AppSettings, inline: String) {
+        var text = inline
+        val dictate = text.isBlank()
+        if (dictate) {
+            Beeps.start()
+            text = Dictation.record(listener)
+        }
+        if (text.isBlank()) {
+            withTimeoutOrNull(10_000) { container.tts.speakAndWait("Ничего не слышно, заметка не записана", s) }
+            return
+        }
+        saveNote(text)
+        if (dictate) Beeps.done()
+        withTimeoutOrNull(10_000) { container.tts.speakAndWait("Заметка записана", s) }
+    }
+
+    private suspend fun saveNote(text: String) {
+        container.dao.insertNote(NoteEntity(text = text, isVoice = true))
+        WidgetUpdater.refresh(this)
     }
 
     private suspend fun runSession(s: AppSettings, first: String) = coroutineScope {
@@ -163,20 +193,37 @@ class AssistantService : Service() {
         overlay.setMood(RobotMood.LISTENING)
         try {
             var text = first
-            if (text.isBlank()) {
-                say("Слушаю", s, RobotMood.TALKING)
-                text = hear()
-            }
-            var turns = 0
             val history = mutableListOf<Pair<String, String>>()
-            while (turns++ < MAX_TURNS) {
+            if (text.isBlank()) say("Слушаю", s, RobotMood.TALKING)
+
+            // Если молчать, робот уходит сам, и его нужно позвать заново. В разговоре с ИИ он остаётся,
+            // пока вы отвечаете.
+            while (currentCoroutineContext().isActive) {
                 if (text.isBlank()) {
-                    say("Я ничего не расслышала", s, RobotMood.THINKING)
-                    break
+                    overlay.setMood(RobotMood.LISTENING)
+                    text = hear()
+                    if (text.isBlank()) break
                 }
+
                 val cmd = CommandParser.parse(text, nowMinutes())
                 if (cmd is Command.Dismiss) {
                     say("Хорошо, я рядом", s, RobotMood.HAPPY)
+                    break
+                }
+
+                // «Заметка»: сигнал, диктовка, запись текстом
+                if (cmd is Command.Clarify && cmd.kind == "заметка") {
+                    overlay.setMood(RobotMood.LISTENING)
+                    overlay.say("Записываю… скажите «готово», когда закончите")
+                    Beeps.start()
+                    val note = Dictation.record(listener) { overlay.say(it) }
+                    if (note.isBlank()) {
+                        say("Ничего не слышно", s, RobotMood.THINKING)
+                    } else {
+                        saveNote(note)
+                        Beeps.done()
+                        say("Заметка записана", s, RobotMood.HAPPY)
+                    }
                     break
                 }
 
@@ -197,6 +244,7 @@ class AssistantService : Service() {
                 history += "assistant" to res.reply
                 say(res.reply, s, RobotMood.TALKING)
 
+                text = ""
                 if (res.followUp != null) {
                     overlay.setMood(RobotMood.LISTENING)
                     val answer = hear()
@@ -204,17 +252,11 @@ class AssistantService : Service() {
                     text = "${res.followUp} $answer"
                     continue
                 }
-                if (cmd is Command.Chat) {
-                    // В разговоре можно отвечать без повторного «LifeOS»
-                    overlay.setMood(RobotMood.LISTENING)
-                    text = hear()
-                    if (text.isBlank()) break
-                    continue
-                }
-                break
+                // В обычном разговоре можно отвечать без повторного «LifeOS»; после команды робот уходит
+                if (cmd !is Command.Chat) break
             }
             overlay.setMood(RobotMood.HAPPY)
-            delay(1800)
+            delay(1200)
         } finally {
             overlay.hide()
         }
@@ -252,11 +294,18 @@ class AssistantService : Service() {
             Intent(this, AssistantService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE,
         )
+        val note = PendingIntent.getActivity(
+            this,
+            2,
+            Intent(this, QuickNoteActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
         return NotificationCompat.Builder(this, LifeApp.CHANNEL_ASSISTANT)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("LifeOS слушает")
             .setContentText("Скажите «LifeOS» или «OS», чтобы позвать помощника")
             .setContentIntent(open)
+            .addAction(0, "Заметка", note)
             .addAction(0, "Выключить", stop)
             .setOngoing(true)
             .build()
@@ -267,6 +316,5 @@ class AssistantService : Service() {
         const val ACTION_SUMMON = "com.lifeos.app.SUMMON"
         const val ACTION_STOP = "com.lifeos.app.STOP"
         private const val NOTIF_ID = 1001
-        private const val MAX_TURNS = 6
     }
 }

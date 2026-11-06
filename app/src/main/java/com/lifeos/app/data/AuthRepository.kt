@@ -90,6 +90,17 @@ class AuthRepository(private val context: Context) {
         FirebaseAuth.getInstance().sendPasswordResetEmail(email).await()
     }
 
+    suspend fun updateName(name: String): Result<Unit> = runCatching {
+        if (cloudAvailable) {
+            FirebaseAuth.getInstance().currentUser
+                ?.updateProfile(UserProfileChangeRequest.Builder().setDisplayName(name).build())
+                ?.await()
+        } else {
+            prefs.edit().putString("name", name).apply()
+        }
+        _user.value = currentFromStorage()
+    }
+
     fun signOut() {
         if (cloudAvailable) FirebaseAuth.getInstance().signOut()
         else prefs.edit().putBoolean("signed_in", false).apply()

@@ -26,6 +26,7 @@ class ScreenWatcherService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         ScreenState.connected = true
+        instance = this
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -60,12 +61,18 @@ class ScreenWatcherService : AccessibilityService() {
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         ScreenState.connected = false
+        instance = null
         ScreenState.obstacles.value = emptyList()
         return super.onUnbind(intent)
     }
 
-    private companion object {
-        const val MAX_NODES = 400
-        const val MAX_RECTS = 80
+    companion object {
+        private const val MAX_NODES = 400
+        private const val MAX_RECTS = 80
+
+        /** Работающий сервис (null, если пользователь не включил его). Нужен для кнопок «назад», «домой» и т. п. */
+        @Volatile
+        var instance: ScreenWatcherService? = null
+            private set
     }
 }

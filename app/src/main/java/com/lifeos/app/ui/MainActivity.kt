@@ -5,19 +5,23 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
 import com.lifeos.app.assistant.AssistantControl
 import com.lifeos.app.brief.BriefScheduler
 import com.lifeos.app.container
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
+/** FragmentActivity нужен для окна отпечатка пальца (BiometricPrompt). */
+class MainActivity : FragmentActivity() {
     private val vm: AppViewModel by viewModels()
 
     private val notificationPermission =
@@ -35,6 +39,14 @@ class MainActivity : ComponentActivity() {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
 
+        // «Запретить скриншоты»: окно помечается защищённым и пропадает из превью последних приложений
+        lifecycleScope.launch {
+            container.settings.flow.map { it.secureScreen }.distinctUntilChanged().collect { secure ->
+                if (secure) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        }
+
         // Android не даёт запускать микрофонный сервис из фона (в том числе после перезагрузки),
         // поэтому прослушивание возвращается, когда пользователь открывает приложение.
         if (savedInstanceState == null) {
@@ -42,8 +54,19 @@ class MainActivity : ComponentActivity() {
                 val s = container.settings.current()
                 if (s.wakeEnabled) AssistantControl.startListening(this@MainActivity)
                 if (s.morningEnabled) BriefScheduler.schedule(this@MainActivity, s.morningHour, s.morningMinute)
+                com.lifeos.app.reminder.ReminderScheduler.rescheduleAll(this@MainActivity)
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        vm.onAppStarted()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        vm.onAppStopped()
     }
 
     override fun onNewIntent(intent: Intent) {

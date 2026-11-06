@@ -38,6 +38,15 @@ object Perms {
         return enabled.split(':').any { it.equals(me, ignoreCase = true) }
     }
 
+    fun has(context: Context, permission: String): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(context, permission) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    /** Доступ к контактам и звонкам: нужен для «позвони маме» и «напиши Ивану». */
+    fun hasContacts(context: Context): Boolean = has(context, android.Manifest.permission.READ_CONTACTS)
+
+    fun hasCall(context: Context): Boolean = has(context, android.Manifest.permission.CALL_PHONE)
+
     fun overlaySettings(context: Context) = Intent(
         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
         Uri.parse("package:${context.packageName}"),
@@ -81,4 +90,11 @@ fun rememberResumeTick(): Int {
         onDispose { owner.lifecycle.removeObserver(obs) }
     }
     return tick
+}
+
+/** Запрашивает сразу несколько разрешений Android; [onResult] вызывается, когда пользователь ответил. */
+@Composable
+fun rememberPermissionsRequest(permissions: Array<String>, onResult: () -> Unit = {}): () -> Unit {
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { onResult() }
+    return { launcher.launch(permissions) }
 }

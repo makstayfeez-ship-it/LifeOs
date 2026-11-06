@@ -129,6 +129,7 @@ private fun DrawScope.drawRobot(
         drawRoundRect(ShoeDark, Offset(cx - 20f, top), Size(40f, 22f), CornerRadius(11f))
         drawRoundRect(White, Offset(cx - 21f, top + 15f), Size(42f, 8f), CornerRadius(4f))
         drawRoundRect(g.copy(alpha = 0.9f), Offset(cx - 13f, top + 5f), Size(26f, 3f), CornerRadius(1.5f))
+        drawRoundRect(Color.White.copy(alpha = 0.12f), Offset(cx - 16f, top + 1f), Size(20f, 5f), CornerRadius(2.5f))
     }
 
     // Руки (за телом)
@@ -164,6 +165,17 @@ private fun DrawScope.drawRobot(
         Brush.verticalGradient(listOf(light, hoodie), startY = bodyTop, endY = bodyTop + 70f),
         Offset(62f, bodyTop), Size(76f, 70f), CornerRadius(26f),
     )
+    drawRoundRect(
+        Brush.radialGradient(
+            listOf(Color.White.copy(alpha = 0.22f), Color.Transparent),
+            center = Offset(82f, bodyTop + 14f), radius = 46f,
+        ),
+        Offset(62f, bodyTop), Size(76f, 70f), CornerRadius(26f),
+    )
+    drawRoundRect(
+        Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.38f)), startY = bodyTop + 30f, endY = bodyTop + 70f),
+        Offset(62f, bodyTop), Size(76f, 70f), CornerRadius(26f),
+    )
     drawRoundRect(g.copy(alpha = 0.35f), Offset(62f, bodyTop), Size(76f, 70f), CornerRadius(26f), style = Stroke(1.5f))
     glow(g, 2f) { c, w -> drawLine(c, Offset(100f, 112f + by), Offset(100f, 164f + by), strokeWidth = w, cap = StrokeCap.Round) }
     val logo = Path().apply {
@@ -184,8 +196,16 @@ private fun DrawScope.drawRobot(
         drawCircle(g, 3f, Offset(c.x - 11f, c.y - 17f))
         drawCircle(g, 3f, Offset(c.x + 11f, c.y - 17f))
     }
-    drawCircle(White, 9.5f, leftHand)
-    drawCircle(White, 9.5f, rightHand)
+    for (h in listOf(leftHand, rightHand)) {
+        drawCircle(White, 9.5f, h)
+        drawCircle(
+            Brush.radialGradient(
+                listOf(Color.White, Color.Transparent, Color(0x553A3560)),
+                center = Offset(h.x - 3f, h.y - 3f), radius = 12f,
+            ),
+            9.5f, h,
+        )
+    }
 
     // Капюшон с «ушками»
     val headTop = 14f + by
@@ -194,6 +214,22 @@ private fun DrawScope.drawRobot(
     drawRoundRect(
         Brush.verticalGradient(listOf(light, hoodie), startY = headTop, endY = headTop + 100f),
         Offset(40f, headTop), Size(120f, 100f), CornerRadius(48f),
+    )
+    drawRoundRect(
+        Brush.radialGradient(
+            listOf(Color.White.copy(alpha = 0.26f), Color.Transparent),
+            center = Offset(78f, headTop + 18f), radius = 80f,
+        ),
+        Offset(40f, headTop), Size(120f, 100f), CornerRadius(48f),
+    )
+    drawRoundRect(
+        Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.35f)), startY = headTop + 60f, endY = headTop + 100f),
+        Offset(40f, headTop), Size(120f, 100f), CornerRadius(48f),
+    )
+    // Контровой свет цвета лица по краю капюшона
+    drawArc(
+        g.copy(alpha = 0.55f), 20f, 70f, false, Offset(41f, headTop + 1f), Size(118f, 98f),
+        style = Stroke(2.5f, cap = StrokeCap.Round),
     )
     drawRoundRect(g.copy(alpha = 0.30f), Offset(40f, headTop), Size(120f, 100f), CornerRadius(48f), style = Stroke(2f))
 
@@ -205,6 +241,8 @@ private fun DrawScope.drawRobot(
 
     drawEyes(g, mood, by, blink)
     drawMouth(g, mood, by, talk)
+    // Стеклянный блик на экране
+    drawOval(Color.White.copy(alpha = 0.07f), Offset(62f, 38f + by), Size(48f, 14f))
 
     // Наушники
     for (cx in listOf(30f, 152f)) {
