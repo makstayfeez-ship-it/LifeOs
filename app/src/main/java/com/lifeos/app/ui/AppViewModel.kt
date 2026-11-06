@@ -15,7 +15,11 @@ import com.lifeos.app.brief.Brief
 import com.lifeos.app.brief.BriefScheduler
 import com.lifeos.app.data.AppSettings
 import com.lifeos.app.data.ExpenseEntity
+import com.lifeos.app.data.Goal
+import com.lifeos.app.data.GoalsCodec
 import com.lifeos.app.data.HabitEntity
+import com.lifeos.app.data.HabitMeta
+import com.lifeos.app.data.HabitMetaCodec
 import com.lifeos.app.data.HabitLogEntity
 import com.lifeos.app.data.NoteEntity
 import com.lifeos.app.data.RobotSkin
@@ -209,9 +213,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addHabit(title: String) = io { c.dao.insertHabit(HabitEntity(title = title)) }
 
+    /** Привычка с планом: значок, сколько раз в неделю и на какой срок (0 — без срока). */
+    fun addHabitPlan(title: String, emoji: String, perWeek: Int, durationDays: Int) = io {
+        val id = c.dao.insertHabit(HabitEntity(title = title))
+        c.settings.update {
+            val map = HabitMetaCodec.decode(it.habitMetaJson) + (id to HabitMeta(emoji, perWeek, LocalDate.now().toEpochDay(), durationDays))
+            it.copy(habitMetaJson = HabitMetaCodec.encode(map))
+        }
+    }
+
     fun deleteHabit(h: HabitEntity) = io {
         c.dao.deleteLogsFor(h.id)
         c.dao.deleteHabit(h)
+        c.settings.update { it.copy(habitMetaJson = HabitMetaCodec.encode(HabitMetaCodec.decode(it.habitMetaJson) - h.id)) }
+    }
+
+    /** Изменить список целей года (добавить, отметить прогресс, подвести итог). */
+    fun saveGoals(block: (List<Goal>) -> List<Goal>) = io {
+        c.settings.update { it.copy(goalsJson = GoalsCodec.encode(block(GoalsCodec.decode(it.goalsJson)))) }
     }
 
     fun toggleHabitToday(h: HabitEntity, doneNow: Boolean) = io {

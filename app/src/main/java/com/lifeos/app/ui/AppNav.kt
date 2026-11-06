@@ -40,6 +40,7 @@ import com.lifeos.app.ui.screens.HomeScreen
 import com.lifeos.app.ui.screens.MorningScreen
 import com.lifeos.app.ui.screens.MorningSettingsScreen
 import com.lifeos.app.ui.screens.AccountScreen
+import com.lifeos.app.ui.screens.GoalsScreen
 import com.lifeos.app.ui.screens.LockScreen
 import com.lifeos.app.ui.screens.NotesScreen
 import com.lifeos.app.ui.screens.NotificationsSettingsScreen
@@ -144,6 +145,7 @@ fun AppNav(vm: AppViewModel) {
 
                 composable("theme") { ThemeScreen(vm, back) }
                 composable("extras") { ExtrasScreen(vm, back) }
+                composable("goals") { GoalsScreen(vm, back) }
                 composable("security") { SecurityScreen(vm, back) }
                 composable("widgets") { WidgetsScreen(back) }
                 composable("account") { AccountScreen(vm, back) }

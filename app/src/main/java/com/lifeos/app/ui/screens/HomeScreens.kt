@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Loop
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Lock
@@ -39,6 +40,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -112,7 +114,13 @@ fun HomeScreen(vm: AppViewModel, go: (String) -> Unit) {
     val settings by vm.settings.collectAsState()
     val user by vm.user.collectAsState()
     val tasks by vm.tasks.collectAsState()
-    var goalDialog by remember { mutableStateOf(false) }
+    val goals = remember(settings.goalsJson) { com.lifeos.app.data.GoalsCodec.decode(settings.goalsJson) }
+    val activeGoal = goals.firstOrNull { it.result == 0 && it.year >= LocalDate.now().year }
+    var reviewGoal by remember { mutableStateOf<com.lifeos.app.data.Goal?>(null) }
+    // В конце года сам спрашиваем: цель выполнена?
+    LaunchedEffect(settings.goalsJson) {
+        dueGoal(goals)?.let { if (reviewGoal == null) reviewGoal = it }
+    }
     val accent = LocalAccent.current
     val callRobot = rememberMicRequest { AssistantControl.summon(context) }
     // Мгновенная голосовая заметка: одно нажатие, говорите, окно само закроется
@@ -193,19 +201,21 @@ fun HomeScreen(vm: AppViewModel, go: (String) -> Unit) {
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(22.dp))
                 .background(CardColor)
-                .clickable { goalDialog = true }
+                .clickable { go("goals") }
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text("Цель на месяц", color = GrayText, style = MaterialTheme.typography.bodySmall)
+                Text("Цель на год", color = GrayText, style = MaterialTheme.typography.bodySmall)
                 Text(
-                    settings.goalTitle.ifBlank { "Поставьте цель" },
+                    activeGoal?.let { it.emoji + " " + it.title } ?: "Поставьте цель на год",
                     color = Snow,
                     style = MaterialTheme.typography.titleMedium,
                 )
             }
-            ProgressRing(settings.goalProgress / 100f, "${settings.goalProgress}%", Modifier.size(56.dp))
+            if (activeGoal != null && activeGoal.hasTarget) {
+                ProgressRing(activeGoal.fraction, "${activeGoal.percent}%", Modifier.size(56.dp))
+            }
         }
 
         Row(
@@ -227,22 +237,7 @@ fun HomeScreen(vm: AppViewModel, go: (String) -> Unit) {
         }
     }
 
-    if (goalDialog) {
-        var title by remember { mutableStateOf(settings.goalTitle) }
-        var progress by remember { mutableStateOf(settings.goalProgress.toString()) }
-        FormDialog(
-            title = "Цель на месяц",
-            confirmText = "Сохранить",
-            onDismiss = { goalDialog = false },
-            onConfirm = {
-                vm.update { it.copy(goalTitle = title.trim(), goalProgress = (progress.toIntOrNull() ?: 0).coerceIn(0, 100)) }
-                goalDialog = false
-            },
-        ) {
-            LifeField(title, { title = it }, "Например: улучшить форму")
-            LifeField(progress, { progress = it.filter(Char::isDigit).take(3) }, "Выполнено, %", keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
-        }
-    }
+    reviewGoal?.let { g -> GoalReviewDialog(vm, g, onClose = { reviewGoal = null }) }
 }
 
 /** Круговой индикатор прогресса (используется для цели и привычек). */
@@ -273,6 +268,7 @@ fun AppsScreen(go: (String) -> Unit) {
             Triple("Финансы", Icons.Rounded.AccountBalanceWallet, "finance"),
             Triple("Покупки", Icons.Rounded.ShoppingCart, "shopping"),
             Triple("Привычки", Icons.Rounded.Loop, "habits"),
+            Triple("Цели на год", Icons.Rounded.Flag, "goals"),
             Triple("Заметки", Icons.Rounded.StickyNote2, "notes"),
             Triple("ИИ-помощник", Icons.Rounded.AutoAwesome, "assistant"),
             Triple("Утренний обзор", Icons.Rounded.WbSunny, "morning"),

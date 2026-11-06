@@ -95,6 +95,11 @@ class MorningBriefBuilder(private val container: AppContainer) {
         val habitsTotal = if (s.briefHabits) dao.habitCount() else null
         val habitsDone = if (s.briefHabits) dao.habitsDoneOn(today.toEpochDay()) else null
 
+        // Цель года: берём первую незавершённую, у которой задана сумма (по ней считается процент)
+        val goal = if (s.briefGoal) {
+            com.lifeos.app.data.GoalsCodec.decode(s.goalsJson).firstOrNull { it.result == 0 && it.hasTarget }
+        } else null
+
         return Brief(
             greeting = greeting,
             weather = weather,
@@ -104,8 +109,8 @@ class MorningBriefBuilder(private val container: AppContainer) {
             spentYesterday = spent,
             habitsDone = habitsDone,
             habitsTotal = habitsTotal,
-            goalTitle = if (s.briefGoal) s.goalTitle.takeIf { it.isNotBlank() } else null,
-            goalProgress = if (s.briefGoal && s.goalTitle.isNotBlank()) s.goalProgress else null,
+            goalTitle = goal?.title,
+            goalProgress = goal?.percent,
         )
     }
 }

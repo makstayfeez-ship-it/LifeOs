@@ -102,7 +102,10 @@ object CommandParser {
      * Возвращает текст заметки (пустой, если после фразы ничего не сказано) или null, если это не такая фраза.
      */
     fun noteTrigger(raw: String): String? {
-        val m = noteTriggerRx.find(normalize(raw)) ?: return null
+        val t = normalize(raw)
+        // Просто слово «заметка»: тоже запускает запись
+        if (t in setOf("заметка", "заметку", "заметки", "запись", "записка", "записку", "новая заметка")) return ""
+        val m = noteTriggerRx.find(t) ?: return null
         return m.groupValues[1].trim()
     }
 

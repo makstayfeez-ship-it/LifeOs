@@ -53,21 +53,22 @@ class QuickNoteActivity : ComponentActivity() {
                         finish()
                         return@LaunchedEffect
                     }
-                    when (val r = listener.listen { partial = it }) {
-                        is SpeechResult.Heard -> {
-                            val text = r.text.trim()
-                            partial = text
-                            val now = Calendar.getInstance()
-                            // «Купить молоко» → покупки, «завтра в 10 позвонить» → задача, иначе просто заметка
-                            status = executor.quickCapture(
-                                text,
-                                container.settings.current(),
-                                now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE),
-                            )
-                            WidgetUpdater.refresh(this@QuickNoteActivity)
-                        }
-                        SpeechResult.Silence -> status = "Ничего не услышано"
-                        is SpeechResult.Error -> status = "Не получилось записать"
+                    Beeps.start()
+                    status = "Говорите заметку… (скажите «готово» или помолчите)"
+                    val text = Dictation.record(listener) { partial = it }
+                    if (text.isBlank()) {
+                        status = "Ничего не услышано"
+                    } else {
+                        partial = text
+                        val now = Calendar.getInstance()
+                        // «Купить молоко» → покупки, «завтра в 10 позвонить» → задача, иначе просто заметка
+                        status = executor.quickCapture(
+                            text,
+                            container.settings.current(),
+                            now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE),
+                        )
+                        WidgetUpdater.refresh(this@QuickNoteActivity)
+                        Beeps.done()
                     }
                     delay(1400)
                     finish()

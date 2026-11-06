@@ -46,6 +46,9 @@ class CloudSync(
             voiceType = s.voiceType.name,
             goalTitle = s.goalTitle,
             goalProgress = s.goalProgress,
+            goalsJson = s.goalsJson,
+            habitMetaJson = s.habitMetaJson,
+            navItems = s.navItems,
         )
         ref.set(
             mapOf(
@@ -77,6 +80,9 @@ class CloudSync(
                 voiceType = runCatching { VoiceType.valueOf(snap.voiceType) }.getOrDefault(it.voiceType),
                 goalTitle = snap.goalTitle.ifBlank { it.goalTitle },
                 goalProgress = snap.goalProgress,
+                goalsJson = snap.goalsJson.ifBlank { it.goalsJson },
+                habitMetaJson = snap.habitMetaJson.ifBlank { it.habitMetaJson },
+                navItems = snap.navItems.ifBlank { it.navItems },
             )
         }
         true

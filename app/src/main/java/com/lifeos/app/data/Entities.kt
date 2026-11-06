@@ -91,4 +91,7 @@ data class Snapshot(
     val voiceType: String = "",
     val goalTitle: String = "",
     val goalProgress: Int = 0,
+    val goalsJson: String = "",
+    val habitMetaJson: String = "",
+    val navItems: String = "",
 )
