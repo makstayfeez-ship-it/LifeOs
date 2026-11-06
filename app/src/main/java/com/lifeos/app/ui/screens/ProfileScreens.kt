@@ -217,7 +217,7 @@ fun ExtrasScreen(vm: AppViewModel, onBack: () -> Unit) {
         SectionTitle("О приложении")
         Text("LifeOS 0.1.0", color = Snow)
         Text(
-            "Помощник, заметки голосом, дела, финансы, документы и привычки в одном приложении.",
+            "Помощник, заметки голосом, дела, финансы и привычки в одном приложении.",
             color = GrayText,
             style = MaterialTheme.typography.bodySmall,
         )

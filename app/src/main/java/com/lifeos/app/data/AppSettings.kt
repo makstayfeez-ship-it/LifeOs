@@ -60,6 +60,7 @@ data class AppSettings(
     val hideLockNotifs: Boolean = false,
     // Оформление и синхронизация
     val glow: Boolean = true,
+    val autoFinance: Boolean = true,
     val lastBackup: Long = 0L,
 )
 
@@ -100,6 +101,7 @@ private object K {
     val secureScreen = booleanPreferencesKey("secure_screen")
     val hideLockNotifs = booleanPreferencesKey("hide_lock_notifs")
     val glow = booleanPreferencesKey("glow")
+    val autoFinance = booleanPreferencesKey("auto_finance")
     val lastBackup = longPreferencesKey("last_backup")
 }
 
@@ -140,6 +142,7 @@ private fun Preferences.toSettings(): AppSettings {
         secureScreen = this[K.secureScreen] ?: d.secureScreen,
         hideLockNotifs = this[K.hideLockNotifs] ?: d.hideLockNotifs,
         glow = this[K.glow] ?: d.glow,
+        autoFinance = this[K.autoFinance] ?: d.autoFinance,
         lastBackup = this[K.lastBackup] ?: d.lastBackup,
     )
 }
@@ -179,6 +182,7 @@ private fun MutablePreferences.write(s: AppSettings) {
     this[K.secureScreen] = s.secureScreen
     this[K.hideLockNotifs] = s.hideLockNotifs
     this[K.glow] = s.glow
+    this[K.autoFinance] = s.autoFinance
     this[K.lastBackup] = s.lastBackup
 }
 

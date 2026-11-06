@@ -77,58 +77,6 @@ private fun WidgetCard(title: String, hint: String, onAdd: () -> Unit) {
     }
 }
 
-// ---------------------------------------------------------------- Поиск
-
-@Composable
-fun SearchScreen(vm: AppViewModel, go: (String) -> Unit, onBack: () -> Unit) {
-    val notes by vm.notes.collectAsState()
-    val tasks by vm.tasks.collectAsState()
-    val shopping by vm.shopping.collectAsState()
-    val docs by vm.documents.collectAsState()
-    var q by remember { mutableStateOf("") }
-    val query = q.trim().lowercase()
-
-    LifeScreen("Поиск", onBack = onBack) {
-        LifeField(q, { q = it }, "Заметки, дела, покупки, документы")
-        if (query.length < 2) {
-            EmptyHint("Введите хотя бы две буквы")
-            return@LifeScreen
-        }
-        val n = notes.filter { it.text.lowercase().contains(query) }
-        val t = tasks.filter { it.title.lowercase().contains(query) }
-        val s = shopping.filter { it.title.lowercase().contains(query) }
-        val d = docs.filter { it.title.lowercase().contains(query) || it.category.lowercase().contains(query) }
-        if (n.isEmpty() && t.isEmpty() && s.isEmpty() && d.isEmpty()) EmptyHint("Ничего не найдено")
-
-        if (n.isNotEmpty()) {
-            SectionTitle("Заметки")
-            n.take(20).forEach { Hit(it.text, Fmt.dateTime(it.createdAt)) { go("notes") } }
-        }
-        if (t.isNotEmpty()) {
-            SectionTitle("Дела")
-            t.take(20).forEach {
-                Hit(it.title, Fmt.dayMonth(java.time.LocalDate.ofEpochDay(it.epochDay)) + (it.timeMinutes?.let { m -> " · " + Fmt.time(m) } ?: "")) { go("calendar") }
-            }
-        }
-        if (s.isNotEmpty()) {
-            SectionTitle("Покупки")
-            s.take(20).forEach { Hit(it.title, if (it.checked) "куплено" else "нужно купить") { go("shopping") } }
-        }
-        if (d.isNotEmpty()) {
-            SectionTitle("Документы")
-            d.take(20).forEach { Hit(it.title, it.category) { go("documents") } }
-        }
-    }
-}
-
-@Composable
-private fun Hit(title: String, sub: String, onClick: () -> Unit) {
-    InfoCard(Modifier.fillMaxWidth().padding(bottom = 8.dp), onClick = onClick) {
-        Text(title, color = Snow, maxLines = 2, style = MaterialTheme.typography.titleMedium)
-        Text(sub, color = GrayText, style = MaterialTheme.typography.bodySmall)
-    }
-}
-
 // ---------------------------------------------------------------- Аккаунт, уведомления, конфиденциальность
 
 @Composable
@@ -213,7 +161,8 @@ fun PrivacyScreen(onBack: () -> Unit, onSecurity: () -> Unit) {
         InfoCard(Modifier.fillMaxWidth()) {
             Text(
                 "• Заметки, дела, финансы и привычки лежат в памяти телефона. В облако они попадают только если вы вошли в облачный аккаунт.\n" +
-                    "• Файлы из «Документов» и записи голоса остаются только на телефоне и в облако не отправляются.\n" +
+                    "• Записи звука остаются только на телефоне и в облако не отправляются.\n" +
+                    "• Автоучёт денег читает только уведомления банков и не сохраняет их текст: в приложение попадают лишь сумма, магазин и направление.\n" +
                     "• Микрофон слушает «LifeOS» только когда включено прослушивание (в шторке виден значок). Распознавание речи делает система Android.\n" +
                     "• Робот «видит экран» только как положение кнопок и полей, текст не читается.\n" +
                     "• Если вставлен ключ ИИ, текст ваших вопросов уходит в Anthropic. Без ключа помощник работает только с командами.\n" +

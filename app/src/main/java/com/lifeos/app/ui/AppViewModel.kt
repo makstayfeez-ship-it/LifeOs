@@ -14,7 +14,6 @@ import com.lifeos.app.audio.VoiceRecorder
 import com.lifeos.app.brief.Brief
 import com.lifeos.app.brief.BriefScheduler
 import com.lifeos.app.data.AppSettings
-import com.lifeos.app.data.DocumentEntity
 import com.lifeos.app.data.ExpenseEntity
 import com.lifeos.app.data.HabitEntity
 import com.lifeos.app.data.HabitLogEntity
@@ -24,7 +23,6 @@ import com.lifeos.app.data.ShoppingEntity
 import com.lifeos.app.data.TaskEntity
 import com.lifeos.app.data.toRussian
 import com.lifeos.app.reminder.ReminderScheduler
-import com.lifeos.app.security.SecureStore
 import com.lifeos.app.widget.WidgetUpdater
 import java.time.LocalDate
 import java.util.Calendar
@@ -53,7 +51,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val shopping = c.dao.shopping().state(emptyList())
     val habits = c.dao.habits().state(emptyList())
     val habitLogs = c.dao.habitLogs().state(emptyList())
-    val documents = c.dao.documents().state(emptyList())
 
     // ---------- блокировка ----------
 
@@ -220,14 +217,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleHabitToday(h: HabitEntity, doneNow: Boolean) = io {
         val log = HabitLogEntity(h.id, LocalDate.now().toEpochDay())
         if (doneNow) c.dao.deleteHabitLog(log) else c.dao.insertHabitLog(log)
-    }
-
-    fun addDocument(title: String, category: String, filePath: String? = null, mime: String? = null) =
-        io { c.dao.insertDocument(DocumentEntity(title = title, category = category, filePath = filePath, mime = mime)) }
-
-    fun deleteDocument(d: DocumentEntity) = io {
-        SecureStore.delete(getApplication(), d.filePath)
-        c.dao.deleteDocument(d)
     }
 
     // ---------- настройки ----------

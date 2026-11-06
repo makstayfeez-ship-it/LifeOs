@@ -1,17 +1,8 @@
 package com.lifeos.app.ui.screens
 
 import androidx.compose.foundation.background
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.Dispatchers
-import com.lifeos.app.security.SecureStore
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.DisposableEffect
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.compose.rememberLauncherForActivityResult
-import android.net.Uri
-import android.content.Intent
+import com.lifeos.app.ui.components.SwitchRow
+import com.lifeos.app.ui.rememberResumeTick
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.StrokeCap
@@ -114,7 +105,41 @@ fun FinanceScreen(vm: AppViewModel, onBack: () -> Unit) {
         if (offset in 0 until period.days) points[offset / period.bucketDays] += e.amountRub
     }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val settings by vm.settings.collectAsState()
+    val tick = rememberResumeTick()
+    val listenerOn = remember(tick) {
+        androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+    }
+
     LifeScreen("Финансы", onBack = onBack) {
+        // Автоучёт: расходы и поступления берутся из уведомлений банков, вручную вводить не нужно
+        InfoCard(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+            Text("Автоучёт по картам", color = Snow, style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (listenerOn && settings.autoFinance) "Включён: покупки, списания и пополнения из уведомлений банков записываются сами."
+                else if (!listenerOn) "Разрешите LifeOS читать уведомления, и траты с пополнениями из банковских приложений и SMS будут появляться здесь сами. Работают Сбер, Т-Банк, ВТБ, Альфа, Райффайзен и другие."
+                else "Выключен.",
+                color = GrayText,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+            )
+            if (!listenerOn) {
+                PillButton(
+                    "Разрешить доступ к уведомлениям",
+                    {
+                        context.startActivity(
+                            android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    },
+                    Modifier.fillMaxWidth(),
+                )
+            } else {
+                SwitchRow("Считать автоматически", settings.autoFinance, { on -> vm.update { it.copy(autoFinance = on) } })
+            }
+        }
+
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             LifeChip("Расходы", !incomeTab, { incomeTab = false })
             LifeChip("Доходы", incomeTab, { incomeTab = true })
@@ -232,149 +257,5 @@ private fun LineChart(points: LongArray, modifier: Modifier = Modifier) {
         drawPath(fill, accent.copy(alpha = 0.15f))
         drawPath(line, accent, style = Stroke(width = 4f, cap = StrokeCap.Round, join = StrokeJoin.Round))
         if (n <= 31) points.forEachIndexed { i, v -> drawCircle(accent, 4f, Offset(stepX * i, y(v))) }
-    }
-}
-
-// ---------------------------------------------------------------- Документы
-
-private val DocCategories = listOf("Паспорта", "Чеки", "Гарантии", "СНИЛС", "Другое")
-
-@Composable
-fun DocumentsScreen(vm: AppViewModel, onBack: () -> Unit) {
-    val docs by vm.documents.collectAsState()
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var filter by remember { mutableStateOf<String?>(null) }
-    var dialog by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
-    val accent = LocalAccent.current
-
-    // Временные расшифрованные копии не должны задерживаться на телефоне
-    DisposableEffect(Unit) {
-        SecureStore.clearViewCache(context)
-        onDispose { SecureStore.clearViewCache(context) }
-    }
-
-    fun open(d: com.lifeos.app.data.DocumentEntity) {
-        val name = d.filePath
-        if (name == null) {
-            message = "К этому документу файл не прикреплён"
-            return
-        }
-        if (!SecureStore.exists(context, name)) {
-            message = "Файла нет на этом телефоне: файлы не хранятся в облаке"
-            return
-        }
-        scope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) { SecureStore.openForView(context, name, d.title, d.mime) }
-            }.onSuccess { uri ->
-                val intent = Intent(Intent.ACTION_VIEW)
-                    .setDataAndType(uri, d.mime ?: "*/*")
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                runCatching { context.startActivity(Intent.createChooser(intent, d.title)) }
-                    .onFailure { message = "Нет приложения, которое откроет этот файл" }
-            }.onFailure { message = "Не удалось расшифровать файл" }
-        }
-    }
-
-    val shown = docs.filter { filter == null || it.category == filter }
-
-    LifeScreen("Документы", onBack = onBack) {
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            LifeChip("Все", filter == null, { filter = null })
-            DocCategories.forEach { c -> LifeChip(c, filter == c, { filter = c }) }
-        }
-        message?.let { Text(it, color = accent, modifier = Modifier.padding(top = 10.dp)) }
-
-        if (shown.isEmpty()) EmptyHint("Здесь будут ваши документы: паспорта, чеки, гарантии, СНИЛС")
-        Column(Modifier.padding(top = 14.dp)) {
-            shown.chunked(2).forEach { row ->
-                Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    row.forEach { d ->
-                        OutlineCard(Modifier.weight(1f), onClick = { open(d) }) {
-                            Row(verticalAlignment = Alignment.Top) {
-                                Text(d.title, color = Snow, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                                IconButton(onClick = { vm.deleteDocument(d) }, modifier = Modifier.size(24.dp)) {
-                                    Icon(Icons.Rounded.Close, "Удалить", tint = GrayText, modifier = Modifier.size(18.dp))
-                                }
-                            }
-                            Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                LabelPill(d.category)
-                                if (d.filePath != null) {
-                                    Icon(Icons.Rounded.Lock, "Зашифровано", tint = accent, modifier = Modifier.padding(start = 8.dp).size(16.dp))
-                                }
-                            }
-                            Text("Добавлен ${Fmt.date(d.addedAt)}", color = GrayText, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
-                        }
-                    }
-                    if (row.size == 1) Box(Modifier.weight(1f))
-                }
-            }
-        }
-
-        PillButton("+ Добавить документ", { dialog = true }, Modifier.fillMaxWidth().padding(vertical = 8.dp), outlined = true)
-
-        InfoCard(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Lock, null, tint = accent, modifier = Modifier.size(32.dp))
-                Column(Modifier.padding(start = 12.dp)) {
-                    Text("Безопасное хранение", color = Snow, style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Прикреплённые файлы шифруются (AES-256) и остаются только на этом телефоне. В облако уходят лишь названия и категории.",
-                        color = GrayText,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            }
-        }
-    }
-
-    if (dialog) {
-        var title by remember { mutableStateOf("") }
-        var category by remember { mutableStateOf(DocCategories.first()) }
-        var uri by remember { mutableStateOf<Uri?>(null) }
-        var pickedName by remember { mutableStateOf("") }
-        var saving by remember { mutableStateOf(false) }
-        val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { picked ->
-            if (picked != null) {
-                uri = picked
-                pickedName = picked.lastPathSegment?.substringAfterLast('/').orEmpty()
-                if (title.isBlank()) title = pickedName.substringBeforeLast('.').take(40)
-            }
-        }
-        FormDialog(
-            title = "Новый документ",
-            onDismiss = { if (!saving) dialog = false },
-            confirmEnabled = title.isNotBlank() && !saving,
-            onConfirm = {
-                val picked = uri
-                if (picked == null) {
-                    vm.addDocument(title.trim(), category)
-                    dialog = false
-                } else {
-                    saving = true
-                    scope.launch {
-                        runCatching { withContext(Dispatchers.IO) { SecureStore.import(context, picked) } }
-                            .onSuccess { (name, mime) -> vm.addDocument(title.trim(), category, name, mime) }
-                            .onFailure { message = "Не удалось сохранить файл" }
-                        saving = false
-                        dialog = false
-                    }
-                }
-            },
-        ) {
-            LifeField(title, { title = it }, "Название")
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                DocCategories.forEach { c -> LifeChip(c, category == c, { category = c }) }
-            }
-            PillButton(
-                if (uri == null) "Прикрепить фото или файл" else "Файл выбран, заменить",
-                { picker.launch(arrayOf("image/*", "application/pdf", "*/*")) },
-                Modifier.fillMaxWidth(),
-                outlined = true,
-            )
-            if (saving) Text("Шифрую…", color = GrayText)
-        }
     }
 }

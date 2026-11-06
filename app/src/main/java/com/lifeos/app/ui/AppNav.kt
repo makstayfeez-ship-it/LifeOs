@@ -33,7 +33,6 @@ import com.lifeos.app.ui.screens.AssistantChatScreen
 import com.lifeos.app.ui.screens.AssistantSettingsScreen
 import com.lifeos.app.ui.screens.AuthScreen
 import com.lifeos.app.ui.screens.CalendarScreen
-import com.lifeos.app.ui.screens.DocumentsScreen
 import com.lifeos.app.ui.screens.ExtrasScreen
 import com.lifeos.app.ui.screens.FinanceScreen
 import com.lifeos.app.ui.screens.HabitsScreen
@@ -45,7 +44,6 @@ import com.lifeos.app.ui.screens.LockScreen
 import com.lifeos.app.ui.screens.NotesScreen
 import com.lifeos.app.ui.screens.NotificationsSettingsScreen
 import com.lifeos.app.ui.screens.PrivacyScreen
-import com.lifeos.app.ui.screens.SearchScreen
 import com.lifeos.app.ui.screens.SecurityScreen
 import com.lifeos.app.ui.screens.WidgetsScreen
 import com.lifeos.app.ui.screens.ProfileScreen
@@ -133,7 +131,6 @@ fun AppNav(vm: AppViewModel) {
 
                 composable("calendar") { CalendarScreen(vm, back) }
                 composable("finance") { FinanceScreen(vm, back) }
-                composable("documents") { DocumentsScreen(vm, back) }
                 composable("shopping") { ShoppingScreen(vm, back) }
                 composable("habits") { HabitsScreen(vm, back) }
                 composable("notes") { NotesScreen(vm, back) }
@@ -149,7 +146,6 @@ fun AppNav(vm: AppViewModel) {
                 composable("extras") { ExtrasScreen(vm, back) }
                 composable("security") { SecurityScreen(vm, back) }
                 composable("widgets") { WidgetsScreen(back) }
-                composable("search") { SearchScreen(vm, go, back) }
                 composable("account") { AccountScreen(vm, back) }
                 composable("notif_settings") { NotificationsSettingsScreen(vm, back) }
                 composable("privacy") { PrivacyScreen(back) { go("security") } }

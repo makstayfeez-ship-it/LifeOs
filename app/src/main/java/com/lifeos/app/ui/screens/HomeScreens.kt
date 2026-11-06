@@ -163,20 +163,6 @@ fun HomeScreen(vm: AppViewModel, go: (String) -> Unit) {
             modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
         )
 
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(bottom = 14.dp)
-                .clip(RoundedCornerShape(26.dp))
-                .background(CardColor)
-                .clickable { go("search") }
-                .padding(horizontal = 18.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Rounded.Search, null, tint = GrayText)
-            Text("Поиск", color = GrayText, modifier = Modifier.padding(start = 10.dp))
-        }
-
         OutlineCard(Modifier.fillMaxWidth(), onClick = { go("calendar") }) {
             Text("Сегодня · ${Fmt.dayMonth(today)}", color = GrayText)
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -198,7 +184,7 @@ fun HomeScreen(vm: AppViewModel, go: (String) -> Unit) {
             AppTile("Календарь", Icons.Rounded.CalendarMonth, { go("calendar") }, Modifier.weight(1f))
             AppTile("Привычки", Icons.Rounded.Loop, { go("habits") }, Modifier.weight(1f))
             AppTile("Финансы", Icons.Rounded.AccountBalanceWallet, { go("finance") }, Modifier.weight(1f))
-            AppTile("Документы", Icons.Rounded.Folder, { go("documents") }, Modifier.weight(1f))
+            AppTile("Заметки", Icons.Rounded.StickyNote2, { go("notes") }, Modifier.weight(1f))
         }
 
         Row(
@@ -285,7 +271,6 @@ fun AppsScreen(go: (String) -> Unit) {
             Triple("Календарь", Icons.Rounded.CalendarMonth, "calendar"),
             Triple("Задачи", Icons.Rounded.CheckCircle, "calendar"),
             Triple("Финансы", Icons.Rounded.AccountBalanceWallet, "finance"),
-            Triple("Документы", Icons.Rounded.Folder, "documents"),
             Triple("Покупки", Icons.Rounded.ShoppingCart, "shopping"),
             Triple("Привычки", Icons.Rounded.Loop, "habits"),
             Triple("Заметки", Icons.Rounded.StickyNote2, "notes"),
@@ -295,7 +280,6 @@ fun AppsScreen(go: (String) -> Unit) {
             Triple("Оформление", Icons.Rounded.Palette, "theme"),
             Triple("Виджеты", Icons.Rounded.Widgets, "widgets"),
             Triple("Безопасность", Icons.Rounded.Lock, "security"),
-            Triple("Поиск", Icons.Rounded.Search, "search"),
             Triple("Дополнительно", Icons.Rounded.Settings, "extras"),
         )
         items.chunked(3).forEach { row ->

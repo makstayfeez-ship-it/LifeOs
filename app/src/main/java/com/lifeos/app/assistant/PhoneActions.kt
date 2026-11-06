@@ -46,10 +46,10 @@ object PhoneActions {
     /** Разделы самого LifeOS: по слову из фразы → экран приложения. */
     private val sections = listOf(
         "календар" to "calendar", "финанс" to "finance", "расход" to "finance",
-        "документ" to "documents", "покупк" to "shopping", "привычк" to "habits",
+        "покупк" to "shopping", "привычк" to "habits",
         "заметк" to "notes", "магазин" to "shop", "оформлени" to "theme",
         "утренн" to "morning", "профил" to "profile", "безопасност" to "security",
-        "виджет" to "widgets", "поиск" to "search",
+        "виджет" to "widgets",
     )
 
     /** Как люди называют приложения вслух → слово из их настоящего названия. */
