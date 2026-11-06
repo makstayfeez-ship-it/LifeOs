@@ -133,6 +133,19 @@ fun MorningSettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
 
     LifeScreen("Настройки обзора", onBack = onBack) {
         SwitchRow(
+            "Показывать на экране блокировки",
+            s.briefOnLock,
+            { on -> vm.update { it.copy(briefOnLock = on) } },
+            subtitle = "Когда вы утром включите телефон, появится красивый обзор: погода, дела, привычки, цель. " +
+                "Нужно разрешение «Поверх других приложений», и лучше включить прослушивание помощника, чтобы система не выгружала LifeOS.",
+        )
+        PillButton(
+            "Показать, как это выглядит",
+            { context.startActivity(android.content.Intent(context, com.lifeos.app.brief.MorningLockActivity::class.java)) },
+            Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            outlined = true,
+        )
+        SwitchRow(
             "Показывать каждое утро",
             s.morningEnabled,
             { on -> vm.updateMorning { it.copy(morningEnabled = on) } },

@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Widgets
 import androidx.compose.material.icons.rounded.Lock
@@ -90,6 +91,7 @@ fun ProfileScreen(vm: AppViewModel, go: (String) -> Unit) {
         ProfileRow("Уведомления", Icons.Rounded.Notifications) { go("notif_settings") }
         ProfileRow("Конфиденциальность", Icons.Rounded.PrivacyTip) { go("privacy") }
         ProfileRow("Безопасность", Icons.Rounded.Lock) { go("security") }
+        ProfileRow("Нижнее меню", Icons.Rounded.Apps) { go("navbar") }
         ProfileRow("Виджеты", Icons.Rounded.Widgets) { go("widgets") }
         ProfileRow("Настройки помощника", Icons.Rounded.AutoAwesome) { go("assistant_settings") }
         ProfileRow("Утренний обзор", Icons.Rounded.WbSunny) { go("morning_settings") }

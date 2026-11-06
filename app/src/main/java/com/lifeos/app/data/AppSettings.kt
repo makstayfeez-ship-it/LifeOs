@@ -47,6 +47,7 @@ data class AppSettings(
     val briefSpending: Boolean = true,
     val briefHabits: Boolean = true,
     val briefGoal: Boolean = true,
+    val briefOnLock: Boolean = true,
     val speakBrief: Boolean = true,
     // Цель месяца
     val goalTitle: String = "Улучшить форму",
@@ -95,6 +96,7 @@ private object K {
     val briefSpending = booleanPreferencesKey("brief_spending")
     val briefHabits = booleanPreferencesKey("brief_habits")
     val briefGoal = booleanPreferencesKey("brief_goal")
+    val briefOnLock = booleanPreferencesKey("brief_on_lock")
     val speakBrief = booleanPreferencesKey("speak_brief")
     val goalTitle = stringPreferencesKey("goal_title")
     val goalProgress = intPreferencesKey("goal_progress")
@@ -139,6 +141,7 @@ private fun Preferences.toSettings(): AppSettings {
         briefSpending = this[K.briefSpending] ?: d.briefSpending,
         briefHabits = this[K.briefHabits] ?: d.briefHabits,
         briefGoal = this[K.briefGoal] ?: d.briefGoal,
+        briefOnLock = this[K.briefOnLock] ?: d.briefOnLock,
         speakBrief = this[K.speakBrief] ?: d.speakBrief,
         goalTitle = this[K.goalTitle] ?: d.goalTitle,
         goalProgress = this[K.goalProgress] ?: d.goalProgress,
@@ -182,6 +185,7 @@ private fun MutablePreferences.write(s: AppSettings) {
     this[K.briefSpending] = s.briefSpending
     this[K.briefHabits] = s.briefHabits
     this[K.briefGoal] = s.briefGoal
+    this[K.briefOnLock] = s.briefOnLock
     this[K.speakBrief] = s.speakBrief
     this[K.goalTitle] = s.goalTitle
     this[K.goalProgress] = s.goalProgress

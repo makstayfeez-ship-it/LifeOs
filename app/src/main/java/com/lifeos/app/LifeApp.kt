@@ -24,6 +24,13 @@ class LifeApp : Application() {
         super.onCreate()
         container = AppContainer(this)
         createChannels()
+        // Утренний обзор на экране блокировки: ловим включение экрана (работает, пока приложение живо в памяти)
+        androidx.core.content.ContextCompat.registerReceiver(
+            this,
+            com.lifeos.app.brief.ScreenOnReceiver(),
+            android.content.IntentFilter(android.content.Intent.ACTION_SCREEN_ON),
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
     }
 
     private fun createChannels() {

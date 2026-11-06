@@ -53,6 +53,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lifeos.app.ui.NavDef
 import com.lifeos.app.ui.theme.Bg
 import com.lifeos.app.ui.theme.lifeBackground
 import com.lifeos.app.ui.theme.CardColor
@@ -313,8 +314,10 @@ fun TextInputDialog(title: String, placeholder: String, onDismiss: () -> Unit, o
 }
 
 @Composable
-fun LifeBottomBar(current: String?, onNavigate: (String) -> Unit, onPlus: () -> Unit) {
+fun LifeBottomBar(items: List<NavDef>, current: String?, onNavigate: (String) -> Unit, onPlus: () -> Unit) {
     val accent = LocalAccent.current
+    val left = items.take((items.size + 1) / 2)
+    val right = items.drop(left.size)
     Row(
         Modifier
             .fillMaxWidth()
@@ -324,16 +327,14 @@ fun LifeBottomBar(current: String?, onNavigate: (String) -> Unit, onPlus: () -> 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceAround,
     ) {
-        BarItem("home", "Главная", Icons.Rounded.Home, current, onNavigate)
-        BarItem("apps", "Приложения", Icons.Rounded.Apps, current, onNavigate)
+        left.forEach { BarItem(it.route, it.label, it.icon, current, onNavigate) }
         Box(
             Modifier.size(54.dp).clip(CircleShape).background(accent).clickable(onClick = onPlus),
             contentAlignment = Alignment.Center,
         ) {
             Icon(Icons.Rounded.Add, contentDescription = "Добавить", tint = Color.White, modifier = Modifier.size(30.dp))
         }
-        BarItem("reminders", "Уведомления", Icons.Rounded.Notifications, current, onNavigate)
-        BarItem("profile", "Профиль", Icons.Rounded.Person, current, onNavigate)
+        right.forEach { BarItem(it.route, it.label, it.icon, current, onNavigate) }
     }
 }
 

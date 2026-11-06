@@ -30,6 +30,9 @@ import com.lifeos.app.ui.components.LifeScreen
 import com.lifeos.app.ui.components.PillButton
 import com.lifeos.app.ui.components.SectionTitle
 import com.lifeos.app.ui.components.SwitchRow
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import com.lifeos.app.ui.theme.GrayText
 import com.lifeos.app.ui.theme.LocalAccent
 import com.lifeos.app.ui.theme.Snow
@@ -171,5 +174,64 @@ fun PrivacyScreen(onBack: () -> Unit, onSecurity: () -> Unit) {
             )
         }
         PillButton("Блокировка и защита", onSecurity, Modifier.fillMaxWidth().padding(top = 12.dp), outlined = true)
+    }
+}
+
+// ---------------------------------------------------------------- Нижнее меню
+
+@Composable
+fun NavbarSettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
+    val s by vm.settings.collectAsState()
+    val items = com.lifeos.app.ui.NavCatalog.parse(s.navItems)
+    val available = com.lifeos.app.ui.NavCatalog.all.filter { it.route !in items }
+    val accent = LocalAccent.current
+    val max = com.lifeos.app.ui.NavCatalog.MAX_ITEMS
+    fun save(list: List<String>) = vm.update { it.copy(navItems = com.lifeos.app.ui.NavCatalog.encode(list)) }
+
+    LifeScreen("Нижнее меню", onBack = onBack) {
+        Text(
+            "Выберите, что показывать внизу экрана. Например, добавьте «Заметки», чтобы они были под рукой. " +
+                "«Главная» и «Приложения» остаются всегда. Максимум $max пунктов, кнопка «+» посередине.",
+            color = GrayText,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        SectionTitle("Сейчас в меню")
+        items.forEachIndexed { i, route ->
+            val d = com.lifeos.app.ui.NavCatalog.def(route) ?: return@forEachIndexed
+            val locked = route in com.lifeos.app.ui.NavCatalog.fixed
+            InfoCard(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Icon(d.icon, null, tint = accent, modifier = Modifier.padding(end = 12.dp))
+                    Text(d.label, color = Snow, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    if (locked) {
+                        Text("всегда", color = GrayText, style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        androidx.compose.material3.IconButton(
+                            onClick = { if (i > 2) save(items.toMutableList().also { l -> l.add(i - 1, l.removeAt(i)) }) },
+                            enabled = i > 2,
+                        ) { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Rounded.KeyboardArrowUp, "Выше", tint = GrayText) }
+                        androidx.compose.material3.IconButton(
+                            onClick = { if (i < items.lastIndex) save(items.toMutableList().also { l -> l.add(i + 1, l.removeAt(i)) }) },
+                            enabled = i < items.lastIndex,
+                        ) { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Rounded.KeyboardArrowDown, "Ниже", tint = GrayText) }
+                        androidx.compose.material3.IconButton(onClick = { save(items - route) }) {
+                            androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Rounded.Close, "Убрать", tint = GrayText)
+                        }
+                    }
+                }
+            }
+        }
+        SectionTitle("Можно добавить")
+        if (items.size >= max) Text("В меню уже $max пунктов. Уберите один, чтобы добавить другой.", color = GrayText)
+        available.forEach { d ->
+            InfoCard(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Icon(d.icon, null, tint = GrayText, modifier = Modifier.padding(end = 12.dp))
+                    Text(d.label, color = Snow, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    PillButton("Добавить", { save(items + d.route) }, enabled = items.size < max, outlined = true)
+                }
+            }
+        }
+        PillButton("Вернуть как было", { save(listOf("home", "apps", "reminders", "profile")) }, Modifier.fillMaxWidth().padding(vertical = 12.dp), outlined = true)
     }
 }

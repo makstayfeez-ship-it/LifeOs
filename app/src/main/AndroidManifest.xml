@@ -74,6 +74,16 @@
                 android:resource="@xml/shortcuts" />
         </activity>
 
+        <!-- Утренний обзор поверх экрана блокировки -->
+        <activity
+            android:name=".brief.MorningLockActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:showWhenLocked="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.LifeOS"
+            android:turnScreenOn="true" />
+
         <!-- Быстрая голосовая заметка: плитка в шторке, работает и на заблокированном экране -->
         <activity
             android:name=".assistant.QuickNoteActivity"

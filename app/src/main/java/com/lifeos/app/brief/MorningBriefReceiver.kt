@@ -75,6 +75,8 @@ class MorningBriefReceiver : BroadcastReceiver() {
                 val name = c.auth.user.value?.name.orEmpty()
                 val brief = withTimeoutOrNull(8_000) { c.brief.build(name, s) } ?: return@launch
                 notify(app, brief, s.hideLockNotifs)
+                // Красивый обзор покажется на экране, когда вы включите телефон
+                if (s.briefOnLock) MorningState.markPending(app)
                 if (s.speakBrief) c.tts.speak(brief.spoken(), s)
             } finally {
                 pending.finish()

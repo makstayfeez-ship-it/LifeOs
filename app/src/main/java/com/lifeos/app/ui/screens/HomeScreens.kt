@@ -27,6 +27,8 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Loop
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Search
@@ -269,6 +271,8 @@ fun AppsScreen(go: (String) -> Unit) {
             Triple("Покупки", Icons.Rounded.ShoppingCart, "shopping"),
             Triple("Привычки", Icons.Rounded.Loop, "habits"),
             Triple("Цели на год", Icons.Rounded.Flag, "goals"),
+            Triple("Уведомления", Icons.Rounded.Notifications, "reminders"),
+            Triple("Профиль", Icons.Rounded.Person, "profile"),
             Triple("Заметки", Icons.Rounded.StickyNote2, "notes"),
             Triple("ИИ-помощник", Icons.Rounded.AutoAwesome, "assistant"),
             Triple("Утренний обзор", Icons.Rounded.WbSunny, "morning"),

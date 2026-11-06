@@ -41,6 +41,7 @@ import com.lifeos.app.ui.screens.MorningScreen
 import com.lifeos.app.ui.screens.MorningSettingsScreen
 import com.lifeos.app.ui.screens.AccountScreen
 import com.lifeos.app.ui.screens.GoalsScreen
+import com.lifeos.app.ui.screens.NavbarSettingsScreen
 import com.lifeos.app.ui.screens.LockScreen
 import com.lifeos.app.ui.screens.NotesScreen
 import com.lifeos.app.ui.screens.NotificationsSettingsScreen
@@ -56,7 +57,6 @@ import com.lifeos.app.ui.theme.Bg
 import com.lifeos.app.ui.theme.LifeTheme
 import java.time.LocalDate
 
-private val BarRoutes = setOf("home", "apps", "reminders", "profile")
 
 @Composable
 fun AppNav(vm: AppViewModel) {
@@ -95,7 +95,8 @@ fun AppNav(vm: AppViewModel) {
 
         val go: (String) -> Unit = { nav.navigate(it) { launchSingleTop = true } }
         val back: () -> Unit = { nav.popBackStack() }
-        val showBar = route in BarRoutes
+        val navItems = remember(settings.navItems) { NavCatalog.parse(settings.navItems) }
+        val showBar = route in NavCatalog.barRoutes(navItems)
 
         val locked by vm.locked.collectAsState()
         Box {
@@ -105,6 +106,7 @@ fun AppNav(vm: AppViewModel) {
             bottomBar = {
                 if (showBar) {
                     LifeBottomBar(
+                        items = navItems.mapNotNull { NavCatalog.def(it) },
                         current = route,
                         onNavigate = { target ->
                             nav.navigate(target) {
@@ -145,6 +147,7 @@ fun AppNav(vm: AppViewModel) {
 
                 composable("theme") { ThemeScreen(vm, back) }
                 composable("extras") { ExtrasScreen(vm, back) }
+                composable("navbar") { NavbarSettingsScreen(vm, back) }
                 composable("goals") { GoalsScreen(vm, back) }
                 composable("security") { SecurityScreen(vm, back) }
                 composable("widgets") { WidgetsScreen(back) }
