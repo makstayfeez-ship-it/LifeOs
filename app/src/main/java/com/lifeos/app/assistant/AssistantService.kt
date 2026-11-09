@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.IBinder
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -68,6 +69,7 @@ class AssistantService : Service() {
 
     private var mainJob: Job? = null
     private var sessionJob: Job? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -98,9 +100,19 @@ class AssistantService : Service() {
             )
         }.isSuccess
         if (!started) {
+            AssistantStatus.error("Android не разрешил запустить микрофонную службу. Откройте LifeOS и включите прослушивание заново")
             stopSelf()
             return START_NOT_STICKY
         }
+        // С выключенным экраном процессор засыпает, и помощник перестаёт слышать. Держим его бодрствующим.
+        if (wakeLock?.isHeld != true) {
+            wakeLock = runCatching {
+                getSystemService(PowerManager::class.java)
+                    .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "LifeOS:listen")
+                    .apply { acquire() }
+            }.getOrNull()
+        }
+        AssistantStatus.running(true)
         val summon = intent?.action == ACTION_SUMMON
         mainJob?.cancel()
         listener.cancel()
@@ -109,6 +121,9 @@ class AssistantService : Service() {
     }
 
     override fun onDestroy() {
+        AssistantStatus.running(false)
+        runCatching { if (wakeLock?.isHeld == true) wakeLock?.release() }
+        wakeLock = null
         scope.cancel()
         listener.cancel()
         container.tts.stop()
@@ -120,6 +135,7 @@ class AssistantService : Service() {
 
     private suspend fun mainLoop(summonFirst: Boolean) {
         var summon = summonFirst
+        var failures = 0
         while (currentCoroutineContext().isActive) {
             val s = container.settings.current()
             if (summon) {
@@ -137,6 +153,8 @@ class AssistantService : Service() {
             }
             when (val r = listener.listen()) {
                 is SpeechResult.Heard -> {
+                    failures = 0
+                    AssistantStatus.heard(r.text)
                     val note = CommandParser.noteTrigger(r.text)
                     if (note != null) {
                         // «Сделать заметку …» без «LifeOS»: без робота и без экрана, сразу в запись
@@ -146,13 +164,19 @@ class AssistantService : Service() {
                         if (rest != null) runSession(s, rest)
                     }
                 }
-                SpeechResult.Silence -> delay(250)
+                SpeechResult.Silence -> {
+                    failures = 0
+                    delay(250)
+                }
                 is SpeechResult.Error -> {
-                    if (r.fatal) {
+                    if (r.code != SpeechListener.NO_RECOGNIZER) AssistantStatus.error(AssistantStatus.explain(r.code))
+                    failures++
+                    // Много ошибок подряд: останавливаемся, чтобы не разряжать батарею впустую; причина видна в «Проверке помощника»
+                    if (r.fatal || failures >= 12) {
                         stopSelf()
                         return
                     }
-                    delay(1500)
+                    delay(if (failures < 4) 1500L else 5000L)
                 }
             }
         }
@@ -300,11 +324,18 @@ class AssistantService : Service() {
             Intent(this, QuickNoteActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_IMMUTABLE,
         )
+        val summon = PendingIntent.getForegroundService(
+            this,
+            3,
+            Intent(this, AssistantService::class.java).setAction(ACTION_SUMMON),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
         return NotificationCompat.Builder(this, LifeApp.CHANNEL_ASSISTANT)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("LifeOS слушает")
             .setContentText("Скажите «LifeOS» или «OS», чтобы позвать помощника")
             .setContentIntent(open)
+            .addAction(0, "Позвать", summon)
             .addAction(0, "Заметка", note)
             .addAction(0, "Выключить", stop)
             .setOngoing(true)

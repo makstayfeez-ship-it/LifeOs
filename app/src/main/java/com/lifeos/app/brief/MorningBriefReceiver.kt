@@ -129,6 +129,21 @@ class BootReceiver : BroadcastReceiver() {
                 val s = app.container.settings.current()
                 if (s.morningEnabled) BriefScheduler.schedule(app, s.morningHour, s.morningMinute)
                 com.lifeos.app.reminder.ReminderScheduler.rescheduleAll(app)
+                // Android не даёт запускать микрофон сам после перезагрузки: просим одно касание, чтобы помощник снова слушал
+                if (s.wakeEnabled && intent.action == Intent.ACTION_BOOT_COMPLETED) {
+                    val open = PendingIntent.getActivity(
+                        app, 20, Intent(app, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                    )
+                    val n = NotificationCompat.Builder(app, LifeApp.CHANNEL_ASSISTANT)
+                        .setSmallIcon(R.drawable.ic_notification)
+                        .setContentTitle("Включить помощника LifeOS")
+                        .setContentText("Телефон перезагружался. Нажмите, чтобы помощник снова слушал")
+                        .setContentIntent(open)
+                        .setAutoCancel(true)
+                        .build()
+                    runCatching { NotificationManagerCompat.from(app).notify(2002, n) }
+                }
             } finally {
                 pending.finish()
             }

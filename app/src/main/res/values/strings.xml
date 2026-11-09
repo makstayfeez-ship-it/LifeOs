@@ -2,6 +2,7 @@
 <resources>
     <string name="app_name">LifeOS</string>
     <string name="tile_note">Голосовая заметка</string>
+    <string name="tile_assistant">Позвать помощника</string>
     <string name="a11y_label">LifeOS: робот видит экран</string>
     <string name="a11y_description">Позволяет роботу LifeOS видеть, где на экране кнопки и поля, чтобы не загораживать их. Текст экрана никуда не отправляется и не сохраняется.</string>
     <string name="widget_note_hint">Заметка</string>

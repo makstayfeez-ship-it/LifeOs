@@ -24,8 +24,15 @@ import kotlinx.coroutines.launch
 class MainActivity : FragmentActivity() {
     private val vm: AppViewModel by viewModels()
 
-    private val notificationPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    /** Микрофон и уведомления просим одним окном при первом запуске; после согласия помощник сразу начинает слушать. */
+    private val startupPermissions =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            if (AssistantControl.hasMic(this)) {
+                lifecycleScope.launch {
+                    if (container.settings.current().wakeEnabled) AssistantControl.startListening(this@MainActivity)
+                }
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,11 +40,15 @@ class MainActivity : FragmentActivity() {
         vm.openRoute(intent?.getStringExtra(EXTRA_ROUTE))
         setContent { AppNav(vm) }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        val missing = buildList {
+            if (!AssistantControl.hasMic(this@MainActivity)) add(Manifest.permission.RECORD_AUDIO)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
         }
+        if (missing.isNotEmpty() && savedInstanceState == null) startupPermissions.launch(missing.toTypedArray())
 
         // «Запретить скриншоты»: окно помечается защищённым и пропадает из превью последних приложений
         lifecycleScope.launch {

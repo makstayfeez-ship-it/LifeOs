@@ -173,6 +173,21 @@ fun HomeScreen(vm: AppViewModel, go: (String) -> Unit) {
             modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
         )
 
+        // Если помощнику чего-то не хватает, говорим об этом сразу, а не оставляем его молча не работать
+        val resumeTick = com.lifeos.app.ui.rememberResumeTick()
+        val problems = remember(resumeTick, settings.wakeEnabled) { assistantProblems(context, settings.wakeEnabled) }
+        if (problems > 0) {
+            OutlineCard(Modifier.fillMaxWidth().padding(bottom = 16.dp), onClick = { go("assistant_check") }) {
+                Text("Помощник пока не готов", color = Snow, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Не хватает: $problems. Нажмите, чтобы проверить и включить",
+                    color = GrayText,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+        }
+
         OutlineCard(Modifier.fillMaxWidth(), onClick = { go("calendar") }) {
             Text("Сегодня · ${Fmt.dayMonth(today)}", color = GrayText)
             Row(verticalAlignment = Alignment.CenterVertically) {

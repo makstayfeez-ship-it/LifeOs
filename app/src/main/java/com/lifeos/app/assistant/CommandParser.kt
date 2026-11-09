@@ -51,7 +51,14 @@ object CommandParser {
     private val greetings = listOf("эй", "привет", "слушай", "окей", "ок", "хей", "hey", "ok")
 
     // Как распознаватель речи обычно записывает «LifeOS» и «OS».
-    private val builtInWake = listOf("лайфос", "лайф ос", "лайф оз", "лайфоз", "life os", "lifeos", "ос", "os")
+    private val builtInWake = listOf(
+        "лайфос", "лайф ос", "лайф оз", "лайфоз", "life os", "lifeos", "ос", "os", "oc",
+        "лайв ос", "лайвос", "лайфус", "лайф о с", "лайф оси", "лайк ос", "лайфа ос", "life oc", "live os",
+        "о эс", "оу эс", "оэс",
+    )
+
+    /** «Лайф ОС» в любом написании: «лайф», «life», «лайв» и сразу за ним «ос», «os», «оз», «оси». */
+    private val fuzzyWakeRx = Regex("^(?:лайф|лайв|лайк|life|live)\\s?(?:ос|оси|оз|os|oc|о с|о эс)(?=\\s|$)")
 
     private val units = mapOf(
         "ноль" to 0, "нуль" to 0, "один" to 1, "одну" to 1, "одна" to 1, "два" to 2, "две" to 2,
@@ -89,6 +96,7 @@ object CommandParser {
             if (t == w) return ""
             if (t.startsWith("$w ")) return t.removePrefix("$w ").trim()
         }
+        fuzzyWakeRx.find(t)?.let { return t.substring(it.value.length).trim() }
         return null
     }
 

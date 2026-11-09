@@ -20,8 +20,7 @@ sealed interface SpeechResult {
     data class Error(val code: Int) : SpeechResult {
         /** Без этого дальше слушать бессмысленно. */
         val fatal: Boolean
-            get() = code == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ||
-                code == SpeechRecognizer.ERROR_CLIENT
+            get() = code == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS || code == SpeechListener.NO_RECOGNIZER
     }
 }
 
@@ -39,7 +38,8 @@ class SpeechListener(private val context: Context) {
                 if (!cont.isActive) return@post
                 releaseNow()
                 if (!available()) {
-                    cont.resume(SpeechResult.Error(SpeechRecognizer.ERROR_CLIENT))
+                    AssistantStatus.error("На телефоне нет службы распознавания речи. Установите или включите приложение «Google» и «Голосовой ввод Google»")
+                    cont.resume(SpeechResult.Error(NO_RECOGNIZER))
                     return@post
                 }
                 val r = SpeechRecognizer.createSpeechRecognizer(context)
@@ -84,7 +84,6 @@ class SpeechListener(private val context: Context) {
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
                     putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                     putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-                    putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
                     putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
                 }
                 r.startListening(intent)
@@ -94,6 +93,11 @@ class SpeechListener(private val context: Context) {
 
     fun cancel() {
         main.post { releaseNow() }
+    }
+
+    companion object {
+        /** Нашего собственного кода: на телефоне нет службы распознавания. Дальше слушать бессмысленно. */
+        const val NO_RECOGNIZER = -100
     }
 
     private fun releaseNow() {

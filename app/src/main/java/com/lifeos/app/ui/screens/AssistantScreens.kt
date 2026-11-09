@@ -199,7 +199,7 @@ fun AssistantChatScreen(vm: AppViewModel, onBack: () -> Unit, onSettings: () -> 
 // ---------------------------------------------------------------- Настройки помощника
 
 @Composable
-fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
+fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () -> Unit) {
     val s by vm.settings.collectAsState()
     val context = LocalContext.current
     val accent = LocalAccent.current
@@ -279,6 +279,12 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
         )
 
         SectionTitle("Вызов")
+        PillButton(
+            "Проверка помощника",
+            onCheck,
+            Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            outlined = true,
+        )
         SwitchRow(
             "Слушать «LifeOS» в фоне",
             s.wakeEnabled,

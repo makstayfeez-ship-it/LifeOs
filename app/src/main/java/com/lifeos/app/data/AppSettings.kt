@@ -27,7 +27,7 @@ data class AppSettings(
     val customPitch: Float = 1f,
     val customRate: Float = 1f,
     val customVoiceName: String = "",
-    val wakeEnabled: Boolean = false,
+    val wakeEnabled: Boolean = true,
     val robotEnabled: Boolean = true,
     val apiKey: String = "",
     // Роботы

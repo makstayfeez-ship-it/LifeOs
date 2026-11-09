@@ -30,6 +30,7 @@ import com.lifeos.app.ui.components.LifeChip
 import com.lifeos.app.ui.components.LifeField
 import com.lifeos.app.ui.screens.AppsScreen
 import com.lifeos.app.ui.screens.AssistantChatScreen
+import com.lifeos.app.ui.screens.AssistantCheckScreen
 import com.lifeos.app.ui.screens.AssistantSettingsScreen
 import com.lifeos.app.ui.screens.AuthScreen
 import com.lifeos.app.ui.screens.CalendarScreen
@@ -139,8 +140,9 @@ fun AppNav(vm: AppViewModel) {
                 composable("notes") { NotesScreen(vm, back) }
 
                 composable("assistant") { AssistantChatScreen(vm, back) { go("assistant_settings") } }
-                composable("assistant_settings") { AssistantSettingsScreen(vm, back) }
+                composable("assistant_settings") { AssistantSettingsScreen(vm, back) { go("assistant_check") } }
                 composable("shop") { RobotShopScreen(vm, back) }
+                composable("assistant_check") { AssistantCheckScreen(vm, back) }
 
                 composable("morning") { MorningScreen(vm, back) { go("morning_settings") } }
                 composable("morning_settings") { MorningSettingsScreen(vm, back) }
