@@ -5,6 +5,12 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import androidx.room.Room
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import com.lifeos.app.assistant.Beeps
+import com.lifeos.app.assistant.SpeechMuter
 import com.lifeos.app.assistant.TtsManager
 import com.lifeos.app.brief.MorningBriefBuilder
 import com.lifeos.app.brief.WeatherClient
@@ -24,6 +30,15 @@ class LifeApp : Application() {
         super.onCreate()
         container = AppContainer(this)
         createChannels()
+        // Если приложение закрылось в момент, когда системные звуки были приглушены, возвращаем их
+        SpeechMuter.restore(this)
+        // Настройки звука помощника действуют во всём приложении
+        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            container.settings.flow.collect {
+                Beeps.enabled = it.recordBeeps
+                SpeechMuter.enabled = it.muteRecognizerBeep
+            }
+        }
         // Утренний обзор на экране блокировки: ловим включение экрана (работает, пока приложение живо в памяти)
         androidx.core.content.ContextCompat.registerReceiver(
             this,

@@ -152,6 +152,8 @@ class SpeechListener(private val context: Context) {
                 recognizer = r
 
                 fun finish(result: SpeechResult) {
+                    // Звук возвращаем до того, как помощник заговорит, иначе начало ответа можно не услышать
+                    SpeechMuter.restore(context)
                     if (cont.isActive) cont.resume(result)
                     main.post { if (recognizer === r) releaseNow() }
                 }
@@ -192,6 +194,7 @@ class SpeechListener(private val context: Context) {
                     putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
                     putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
                 }
+                SpeechMuter.mute(context)
                 r.startListening(intent)
             }
             cont.invokeOnCancellation { main.post { releaseNow() } }
@@ -209,6 +212,7 @@ class SpeechListener(private val context: Context) {
     }
 
     private fun releaseNow() {
+        SpeechMuter.restore(context)
         recognizer?.let {
             runCatching { it.cancel() }
             runCatching { it.destroy() }

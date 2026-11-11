@@ -299,6 +299,21 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () ->
             subtitle = "Помощник отзывается на голос, даже когда экран выключен. В шторке появится уведомление.",
         )
         SwitchRow(
+            "Приглушать писк распознавания",
+            s.muteRecognizerBeep,
+            { on ->
+                vm.update { it.copy(muteRecognizerBeep = on) }
+                if (!on) com.lifeos.app.assistant.SpeechMuter.restore(context)
+            },
+            subtitle = "Служба Google пищит при каждом запуске прослушивания. Пока слушает помощник, звук мультимедиа и системные сигналы приглушаются (если играет музыка, ничего не трогаем; звонки и уведомления остаются). Офлайн-распознавание не пищит вообще.",
+        )
+        SwitchRow(
+            "Сигналы при записи заметки",
+            s.recordBeeps,
+            { on -> vm.update { it.copy(recordBeeps = on) } },
+            subtitle = "Короткий звук в начале и в конце записи, чтобы было слышно, что телефон слушает.",
+        )
+        SwitchRow(
             "Показывать робота на экране",
             s.robotEnabled,
             { on -> vm.update { it.copy(robotEnabled = on) } },

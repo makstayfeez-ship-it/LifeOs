@@ -7,6 +7,9 @@ import kotlinx.coroutines.delay
 
 /** Звуковые сигналы начала и конца записи заметки: понятно, что телефон слушает, даже без экрана. */
 object Beeps {
+    /** Можно выключить в настройках помощника. */
+    @Volatile var enabled = true
+
     suspend fun start() = play(ToneGenerator.TONE_PROP_BEEP, 150)
 
     suspend fun done() {
@@ -14,6 +17,7 @@ object Beeps {
     }
 
     private suspend fun play(tone: Int, ms: Int) {
+        if (!enabled) return
         runCatching {
             val g = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80)
             g.startTone(tone, ms)
