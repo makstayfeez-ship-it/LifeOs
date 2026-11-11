@@ -166,7 +166,7 @@ class AssistantService : Service() {
                 }
                 SpeechResult.Silence -> {
                     failures = 0
-                    delay(250)
+                    delay(if (listener.offline) 20L else 250L)
                 }
                 is SpeechResult.Error -> {
                     if (r.code != SpeechListener.NO_RECOGNIZER) AssistantStatus.error(AssistantStatus.explain(r.code))
@@ -295,7 +295,7 @@ class AssistantService : Service() {
 
     /** Слушает фразу, показывая распознанное над роботом. Пустая строка — ничего не сказали. */
     private suspend fun hear(): String =
-        when (val r = listener.listen { overlay.say(it) }) {
+        when (val r = listener.listen(accurate = true) { overlay.say(it) }) {
             is SpeechResult.Heard -> r.text
             else -> ""
         }

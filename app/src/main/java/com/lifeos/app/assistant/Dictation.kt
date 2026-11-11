@@ -39,7 +39,7 @@ object Dictation {
         val started = SystemClock.elapsedRealtime()
         var emptyTries = 0
         while (SystemClock.elapsedRealtime() - started < maxMs) {
-            when (val r = listener.listen { onPartial((parts + it).joinToString(" ")) }) {
+            when (val r = listener.listen(accurate = true) { onPartial((parts + it).joinToString(" ")) }) {
                 is SpeechResult.Heard -> {
                     emptyTries = 0
                     val words = r.text.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }.toMutableList()

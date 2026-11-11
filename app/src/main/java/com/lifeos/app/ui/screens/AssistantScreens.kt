@@ -129,7 +129,7 @@ fun AssistantChatScreen(vm: AppViewModel, onBack: () -> Unit, onSettings: () -> 
             listening = true
             mood = RobotMood.LISTENING
             scope.launch {
-                when (val r = listener.listen { input = it }) {
+                when (val r = listener.listen(accurate = true) { input = it }) {
                     is SpeechResult.Heard -> {
                         input = ""
                         listening = false

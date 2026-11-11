@@ -23,6 +23,9 @@ import androidx.compose.ui.unit.dp
 import com.lifeos.app.assistant.AssistantControl
 import com.lifeos.app.assistant.AssistantStatus
 import com.lifeos.app.assistant.QuickNoteActivity
+import com.lifeos.app.assistant.SpeechListener
+import com.lifeos.app.assistant.SystemAssistant
+import com.lifeos.app.assistant.VoskModel
 import com.lifeos.app.ui.AppViewModel
 import com.lifeos.app.ui.Perms
 import com.lifeos.app.ui.components.InfoCard
@@ -42,7 +45,7 @@ private const val BAD_COLOR = 0xFFFF5A4F
 fun assistantProblems(context: android.content.Context, wakeEnabled: Boolean): Int {
     var n = 0
     if (!AssistantControl.hasMic(context)) n++
-    if (!SpeechRecognizer.isRecognitionAvailable(context)) n++
+    if (!SpeechListener(context).available()) n++
     if (!Perms.canOverlay(context)) n++
     if (!wakeEnabled) n++
     return n
@@ -57,7 +60,11 @@ fun AssistantCheckScreen(vm: AppViewModel, onBack: () -> Unit) {
     val tick = rememberResumeTick()
 
     val micOk = remember(tick, status.updatedAt) { AssistantControl.hasMic(context) }
-    val recognizerOk = remember(tick) { SpeechRecognizer.isRecognitionAvailable(context) }
+    val vosk by VoskModel.state.collectAsState()
+    val voskReady = remember(tick, vosk) { VoskModel.isReady(context) }
+    val googleOk = remember(tick) { SpeechRecognizer.isRecognitionAvailable(context) }
+    val recognizerOk = voskReady || googleOk
+    val systemDefault = remember(tick) { SystemAssistant.isDefault(context) }
     val overlayOk = remember(tick) { Perms.canOverlay(context) }
     val batteryOk = remember(tick) {
         context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName)
@@ -83,7 +90,11 @@ fun AssistantCheckScreen(vm: AppViewModel, onBack: () -> Unit) {
             CheckRow(
                 "Распознавание речи",
                 recognizerOk,
-                if (recognizerOk) "Есть" else "На телефоне нет службы распознавания речи. Установите или включите приложение «Google» (голосовой ввод) в Google Play",
+                when {
+                    voskReady -> "Офлайн-модель установлена: слышит без интернета и без Google"
+                    googleOk -> "Есть служба Google (нужен интернет). Надёжнее скачать офлайн-модель ниже"
+                    else -> "На телефоне нет службы распознавания речи. Скачайте офлайн-модель ниже"
+                },
             )
             CheckRow(
                 "Прослушивание включено",
@@ -124,6 +135,62 @@ fun AssistantCheckScreen(vm: AppViewModel, onBack: () -> Unit) {
                         )
                     },
                     Modifier.padding(top = 6.dp),
+                )
+            }
+        }
+
+        SectionTitle("Офлайн-распознавание (рекомендуется)")
+        InfoCard(Modifier.fillMaxWidth()) {
+            Text(
+                "Русская модель речи, около 45 МБ, скачивается один раз. После этого помощник слышит «LifeOS», «помощник» и «заметка» " +
+                    "без интернета, без писков и даже на телефонах без Google.",
+                color = GrayText,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            when {
+                vosk.downloading -> Text(
+                    "Скачиваю… ${vosk.percent}%",
+                    color = Snow,
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+                voskReady -> {
+                    Text("✓ Установлено", color = androidx.compose.ui.graphics.Color(OK_COLOR), modifier = Modifier.padding(top = 10.dp))
+                    PillButton("Скачать заново", { VoskModel.reinstall(context) }, Modifier.padding(top = 6.dp), outlined = true)
+                }
+                else -> {
+                    if (vosk.error.isNotBlank()) {
+                        Text(vosk.error, color = androidx.compose.ui.graphics.Color(BAD_COLOR), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+                    }
+                    PillButton("Скачать (45 МБ)", { VoskModel.startDownload(context) }, Modifier.padding(top = 10.dp))
+                }
+            }
+        }
+
+        SectionTitle("Вызов кнопкой питания")
+        InfoCard(Modifier.fillMaxWidth()) {
+            Text(
+                "Сделайте LifeOS главным помощником телефона: тогда удержание кнопки питания (или жест от угла экрана) сразу зовёт робота. " +
+                    "Это работает всегда, даже если голосом позвать не получается.",
+                color = GrayText,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (systemDefault) {
+                Text("✓ LifeOS выбран помощником", color = androidx.compose.ui.graphics.Color(OK_COLOR), modifier = Modifier.padding(top = 10.dp))
+            } else {
+                PillButton(
+                    "Выбрать помощником",
+                    {
+                        runCatching { context.startActivity(SystemAssistant.settingsIntent()) }
+                            .onFailure { runCatching { context.startActivity(SystemAssistant.fallbackSettingsIntent()) } }
+                    },
+                    Modifier.padding(top = 10.dp),
+                )
+                Text(
+                    "Откроются настройки: выберите «Цифровой помощник» → LifeOS.",
+                    color = GrayText,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 6.dp),
                 )
             }
         }

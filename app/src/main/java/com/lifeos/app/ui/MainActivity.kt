@@ -64,6 +64,12 @@ class MainActivity : FragmentActivity() {
             lifecycleScope.launch {
                 val s = container.settings.current()
                 if (s.wakeEnabled) AssistantControl.startListening(this@MainActivity)
+                // Офлайн-модель речи скачиваем сами, но только по безлимитному Wi‑Fi (около 45 МБ)
+                if (s.wakeEnabled && !com.lifeos.app.assistant.VoskModel.isReady(this@MainActivity) &&
+                    com.lifeos.app.assistant.VoskModel.onUnmeteredNetwork(this@MainActivity)
+                ) {
+                    com.lifeos.app.assistant.VoskModel.startDownload(this@MainActivity)
+                }
                 if (s.morningEnabled) BriefScheduler.schedule(this@MainActivity, s.morningHour, s.morningMinute)
                 com.lifeos.app.reminder.ReminderScheduler.rescheduleAll(this@MainActivity)
             }
