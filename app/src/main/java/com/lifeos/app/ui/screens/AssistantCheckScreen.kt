@@ -146,9 +146,12 @@ fun AssistantCheckScreen(vm: AppViewModel, onBack: () -> Unit) {
         InfoCard(Modifier.fillMaxWidth()) {
             CheckRow(
                 "ИИ подключён",
-                s.apiKey.isNotBlank(),
-                if (s.apiKey.isNotBlank()) "Помощник отвечает на любые вопросы и сам выбирает действия"
-                else "Без ключа помощник понимает только готовые команды. Ключ с console.anthropic.com вставляется в «Настройках помощника»",
+                com.lifeos.app.assistant.AiAgent.configured(s),
+                when {
+                    s.apiKey.isNotBlank() -> "Работает со своим ключом: помощник отвечает на любые вопросы и сам выбирает действия"
+                    com.lifeos.app.assistant.AiAgent.configured(s) -> "Работает через бесплатный сервер LifeOS: ключ не нужен, лимит запросов в день общий"
+                    else -> "Сервер ИИ не подключён. Помощник понимает только готовые команды. Вставьте свой ключ или адрес сервера в «Настройках помощника»"
+                },
             )
             CheckRow(
                 "Видит экран и управляет им",

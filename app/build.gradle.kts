@@ -22,6 +22,12 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+
+        // Адрес бесплатного сервера ИИ (server/ai-relay). Задаётся в gradle.properties или переменной окружения AI_RELAY_URL.
+        val relayUrl = (System.getenv("AI_RELAY_URL")?.takeIf { it.isNotBlank() } ?: (project.findProperty("lifeos.aiRelayUrl") as String?) ?: "").trim()
+        val relayToken = (System.getenv("AI_RELAY_TOKEN")?.takeIf { it.isNotBlank() } ?: (project.findProperty("lifeos.aiRelayToken") as String?) ?: "").trim()
+        buildConfigField("String", "AI_RELAY_URL", "\"$relayUrl\"")
+        buildConfigField("String", "AI_RELAY_TOKEN", "\"$relayToken\"")
     }
 
     buildTypes {
@@ -41,6 +47,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

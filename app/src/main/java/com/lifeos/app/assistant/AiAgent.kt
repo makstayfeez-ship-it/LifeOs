@@ -1,6 +1,7 @@
 package com.lifeos.app.assistant
 
 import android.content.Context
+import com.lifeos.app.BuildConfig
 import com.lifeos.app.container
 import com.lifeos.app.data.AppSettings
 import java.net.HttpURLConnection
@@ -23,18 +24,38 @@ import org.json.JSONObject
 class AiAgent(private val context: Context, private val executor: CommandExecutor) {
     private val c get() = context.container
 
-    suspend fun ask(s: AppSettings, history: List<Pair<String, String>>, userText: String): String {
-        if (s.apiKey.isBlank()) {
-            return "Чтобы я мог думать и делать всё по просьбе, добавь ключ ИИ в настройках помощника. " +
-                "Будильник, таймер, заметки, напоминания, покупки, расходы и простой счёт работают и без него."
+    /** Куда отправлять запросы: свой ключ Anthropic или бесплатный сервер LifeOS (ключ тогда не нужен). */
+    private class Endpoint(val url: String, val headers: Map<String, String>, val relay: Boolean)
+
+    private fun endpoint(s: AppSettings): Endpoint? {
+        if (s.apiKey.isNotBlank()) {
+            return Endpoint(API_URL, mapOf("x-api-key" to s.apiKey, "anthropic-version" to "2023-06-01"), relay = false)
         }
+        val base = relayBase(s) ?: return null
+        return Endpoint(
+            "$base/v1/messages",
+            mapOf("x-device-id" to deviceId(), "x-app-token" to BuildConfig.AI_RELAY_TOKEN),
+            relay = true,
+        )
+    }
+
+    private fun deviceId(): String {
+        val prefs = context.getSharedPreferences("lifeos_ai", Context.MODE_PRIVATE)
+        return prefs.getString("device_id", null)
+            ?: java.util.UUID.randomUUID().toString().also { prefs.edit().putString("device_id", it).apply() }
+    }
+
+    suspend fun ask(s: AppSettings, history: List<Pair<String, String>>, userText: String): String {
+        val ep = endpoint(s)
+            ?: return "Чтобы я мог думать и делать всё по просьбе, нужен ИИ: в настройках помощника вставьте ключ или адрес сервера ИИ. " +
+                "Будильник, таймер, заметки, напоминания, покупки, расходы и простой счёт работают и без него."
         return withContext(Dispatchers.IO) {
-            runCatching { loop(s, history, userText) }
-                .getOrElse { "Не получилось связаться с ИИ. Проверь интернет и ключ в настройках." }
+            runCatching { loop(ep, s, history, userText) }
+                .getOrElse { "Не получилось связаться с ИИ. Проверь интернет." }
         }
     }
 
-    private suspend fun loop(s: AppSettings, history: List<Pair<String, String>>, userText: String): String {
+    private suspend fun loop(ep: Endpoint, s: AppSettings, history: List<Pair<String, String>>, userText: String): String {
         val messages = JSONArray()
         // API требует, чтобы диалог начинался с реплики пользователя
         history.takeLast(12).dropWhile { it.first != "user" }.forEach { (role, text) ->
@@ -44,7 +65,7 @@ class AiAgent(private val context: Context, private val executor: CommandExecuto
         val system = systemPrompt(s)
 
         repeat(MAX_ROUNDS) {
-            val response = post(s.apiKey, system, messages)
+            val response = post(ep, system, messages)
             if (response is String) return response
             val json = response as JSONObject
             val content = json.getJSONArray("content")
@@ -74,30 +95,38 @@ class AiAgent(private val context: Context, private val executor: CommandExecuto
     }
 
     /** Возвращает JSONObject с ответом или String с понятным сообщением об ошибке. */
-    private fun post(apiKey: String, system: String, messages: JSONArray): Any {
+    private fun post(ep: Endpoint, system: String, messages: JSONArray): Any {
         val body = JSONObject()
             .put("model", MODEL)
             .put("max_tokens", 1024)
             .put("system", system)
             .put("tools", TOOLS)
             .put("messages", messages)
-        val conn = (URL(API_URL).openConnection() as HttpURLConnection).apply {
+        val conn = (URL(ep.url).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 10_000
             readTimeout = 60_000
             doOutput = true
             setRequestProperty("content-type", "application/json")
-            setRequestProperty("x-api-key", apiKey)
-            setRequestProperty("anthropic-version", "2023-06-01")
+            ep.headers.forEach { (k, v) -> if (v.isNotBlank()) setRequestProperty(k, v) }
         }
         try {
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
             if (conn.responseCode !in 200..299) {
-                return when (conn.responseCode) {
-                    401, 403 -> "Ключ ИИ не подошёл. Проверь его в настройках помощника."
-                    402 -> "На счёте ИИ закончились деньги. Пополни баланс на console.anthropic.com."
-                    429 -> "Слишком много запросов, попробуй чуть позже."
-                    else -> "ИИ сейчас недоступен (код ${conn.responseCode})."
+                return if (ep.relay) {
+                    when (conn.responseCode) {
+                        429 -> "Бесплатный лимит ИИ сейчас исчерпан. Попробуй позже или вставь свой ключ ИИ в настройках помощника."
+                        403 -> "Сервер ИИ не принял приложение. Нужна свежая версия LifeOS."
+                        503 -> "Сервер ИИ ещё не настроен владельцем приложения."
+                        else -> "Сервер ИИ сейчас недоступен (код ${conn.responseCode}). Попробуй позже."
+                    }
+                } else {
+                    when (conn.responseCode) {
+                        401, 403 -> "Ключ ИИ не подошёл. Проверь его в настройках помощника."
+                        402 -> "На счёте ИИ закончились деньги. Пополни баланс на console.anthropic.com."
+                        429 -> "Слишком много запросов, попробуй чуть позже."
+                        else -> "ИИ сейчас недоступен (код ${conn.responseCode})."
+                    }
                 }
             }
             return JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
@@ -201,6 +230,13 @@ class AiAgent(private val context: Context, private val executor: CommandExecuto
     }
 
     companion object {
+        /** Адрес бесплатного сервера ИИ: свой из настроек или встроенный в сборку. */
+        fun relayBase(s: AppSettings): String? =
+            s.relayUrl.trim().ifBlank { BuildConfig.AI_RELAY_URL.trim() }.trimEnd('/').takeIf { it.startsWith("https://") }
+
+        /** ИИ работает: есть свой ключ или доступен бесплатный сервер. */
+        fun configured(s: AppSettings): Boolean = s.apiKey.isNotBlank() || relayBase(s) != null
+
         private const val API_URL = "https://api.anthropic.com/v1/messages"
         private const val MODEL = "claude-sonnet-5-5"
         private const val MAX_ROUNDS = 6

@@ -214,6 +214,7 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () ->
 
     var name by remember(s.assistantName) { mutableStateOf(s.assistantName) }
     var key by remember(s.apiKey) { mutableStateOf(s.apiKey) }
+    var relay by remember(s.relayUrl) { mutableStateOf(s.relayUrl) }
     var pitch by remember(s.customPitch) { mutableStateOf(s.customPitch) }
     var rate by remember(s.customRate) { mutableStateOf(s.customRate) }
 
@@ -388,35 +389,45 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () ->
                 "• счёт: «сколько будет 15 умножить на 23», «посчитай 18 процентов от 4500», «корень из 144»\n" +
                 "• «запомни, что у меня аллергия на орехи» (помощник будет учитывать это дальше)\n" +
                 "• экран (нужен доступ выше): «что на экране», «нажми отправить», «прокрути вниз»\n" +
-                "• любой вопрос и сложная просьба своими словами, если вставлен ключ ИИ: помощник сам решит, что сделать (будильник, заметка, поиск…)",
+                "• любой вопрос и сложная просьба своими словами, если подключён ИИ: помощник сам решит, что сделать (будильник, заметка, поиск…)",
             color = GrayText,
             style = MaterialTheme.typography.bodySmall,
         )
 
         SectionTitle("ИИ внутри помощника")
+        val ownKey = s.apiKey.isNotBlank()
+        val freeAi = !ownKey && com.lifeos.app.assistant.AiAgent.relayBase(s) != null
         InfoCard(Modifier.fillMaxWidth()) {
             Text(
-                if (s.apiKey.isBlank()) "ИИ не подключён" else "✓ ИИ подключён",
-                color = if (s.apiKey.isBlank()) Snow else Color(0xFF4CD964),
+                when {
+                    ownKey -> "✓ ИИ подключён (свой ключ)"
+                    freeAi -> "✓ ИИ подключён (бесплатный сервер)"
+                    else -> "ИИ не подключён"
+                },
+                color = if (ownKey || freeAi) Color(0xFF4CD964) else Snow,
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
-                if (s.apiKey.isBlank())
-                    "Сейчас помощник понимает только готовые команды (будильник, заметка, напоминание, счёт, звонок). Чтобы он отвечал на любые вопросы, " +
-                        "решал задачи как я, сам ставил будильники и делал заметки по свободной фразе и запоминал вас, подключите ИИ."
-                else
-                    "Помощник отвечает на любые вопросы, решает задачи и сам вызывает нужные действия: будильник, таймер, напоминание, заметку, покупки, расход, поиск, звонок, экран.",
+                when {
+                    ownKey -> "Помощник отвечает на любые вопросы, решает задачи и сам вызывает нужные действия. Лимит зависит от вашего счёта."
+                    freeAi -> "Ничего настраивать не нужно: помощник отвечает на любые вопросы, решает задачи и сам вызывает нужные действия " +
+                        "(будильник, напоминание, заметка, покупки, расход, поиск, звонок, экран). Бесплатный лимит запросов в день общий для всех, " +
+                        "если он кончится, помощник так и скажет. Ваши фразы и запомненные факты уходят на сервер LifeOS и дальше в сервис ИИ, " +
+                        "поэтому не диктуйте ему пароли, номера карт и другое секретное."
+                    else -> "Сейчас помощник понимает только готовые команды (будильник, заметка, напоминание, счёт, звонок). " +
+                        "Чтобы он отвечал на любые вопросы и понимал просьбы своими словами, нужен ИИ: вставьте свой ключ ниже " +
+                        "или адрес сервера ИИ в разделе «Дополнительно»."
+                },
                 color = GrayText,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 4.dp),
             )
         }
         Text(
-            "Как получить ключ (5 минут):\n" +
-                "1. Откройте console.anthropic.com и войдите по почте.\n" +
-                "2. Раздел Billing: пополните баланс на несколько долларов (ключ работает отдельно от подписки Claude и оплачивается за использование).\n" +
-                "3. Раздел API Keys → Create Key, скопируйте ключ (начинается с sk-ant-).\n" +
-                "4. Вставьте его ниже и нажмите «Сохранить ключ». Он хранится только на этом телефоне.",
+            "Свой ключ (необязательно: без общего лимита и без сервера посередине).\n" +
+                "1. console.anthropic.com → войти по почте.\n" +
+                "2. Billing: пополнить баланс (ключ оплачивается за использование, отдельно от подписки Claude).\n" +
+                "3. API Keys → Create Key, скопировать ключ (sk-ant-…) и вставить ниже. Он хранится только на этом телефоне.",
             color = GrayText,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(top = 10.dp, bottom = 8.dp),
@@ -427,6 +438,27 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () ->
             { vm.update { it.copy(apiKey = key.trim()) } },
             Modifier.padding(top = 8.dp),
             enabled = key.trim() != s.apiKey,
+            outlined = true,
+        )
+        Text(
+            "Дополнительно: адрес сервера ИИ",
+            color = Snow,
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(top = 16.dp),
+        )
+        Text(
+            "Нужен владельцу приложения, чтобы подключить свой бесплатный сервер без пересборки (инструкция в server/ai-relay/README.md). " +
+                "Обычным пользователям заполнять не нужно. Адрес должен начинаться с https://",
+            color = GrayText,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        LifeField(relay, { relay = it }, "https://lifeos-ai.ваше-имя.workers.dev")
+        PillButton(
+            "Сохранить адрес",
+            { vm.update { it.copy(relayUrl = relay.trim()) } },
+            Modifier.padding(top = 8.dp),
+            enabled = relay.trim() != s.relayUrl,
             outlined = true,
         )
 

@@ -51,6 +51,8 @@ data class AppSettings(
     val recordBeeps: Boolean = true,
     val googleWake: Boolean = false,
     val googleDictation: Boolean = false,
+    /** Свой адрес сервера ИИ (необязательно, заменяет встроенный). */
+    val relayUrl: String = "",
     /** Что помощник помнит о пользователе: по одному факту в строке. */
     val memory: String = "",
     val muteRecognizerBeep: Boolean = true,
@@ -106,6 +108,7 @@ private object K {
     val recordBeeps = booleanPreferencesKey("record_beeps")
     val googleWake = booleanPreferencesKey("google_wake")
     val googleDictation = booleanPreferencesKey("google_dictation")
+    val relayUrl = stringPreferencesKey("relay_url")
     val memory = stringPreferencesKey("assistant_memory")
     val muteRecognizerBeep = booleanPreferencesKey("mute_recognizer_beep")
     val speakBrief = booleanPreferencesKey("speak_brief")
@@ -156,6 +159,7 @@ private fun Preferences.toSettings(): AppSettings {
         recordBeeps = this[K.recordBeeps] ?: d.recordBeeps,
         googleWake = this[K.googleWake] ?: d.googleWake,
         googleDictation = this[K.googleDictation] ?: d.googleDictation,
+        relayUrl = this[K.relayUrl] ?: d.relayUrl,
         memory = this[K.memory] ?: d.memory,
         muteRecognizerBeep = this[K.muteRecognizerBeep] ?: d.muteRecognizerBeep,
         speakBrief = this[K.speakBrief] ?: d.speakBrief,
@@ -205,6 +209,7 @@ private fun MutablePreferences.write(s: AppSettings) {
     this[K.recordBeeps] = s.recordBeeps
     this[K.googleWake] = s.googleWake
     this[K.googleDictation] = s.googleDictation
+    this[K.relayUrl] = s.relayUrl
     this[K.memory] = s.memory
     this[K.muteRecognizerBeep] = s.muteRecognizerBeep
     this[K.speakBrief] = s.speakBrief

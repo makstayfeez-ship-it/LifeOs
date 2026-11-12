@@ -76,7 +76,7 @@ class CommandExecutor(private val context: Context) {
             Command.ScreenRead -> ExecResult(
                 when {
                     !ScreenControl.enabled -> ScreenControl.NEED_ACCESS
-                    s.apiKey.isNotBlank() -> agent.ask(s, emptyList(), "Что сейчас на экране телефона? Прочитай экран и коротко расскажи.")
+                    AiAgent.configured(s) -> agent.ask(s, emptyList(), "Что сейчас на экране телефона? Прочитай экран и коротко расскажи.")
                     else -> ScreenControl.readScreen().take(400)
                 },
             )
