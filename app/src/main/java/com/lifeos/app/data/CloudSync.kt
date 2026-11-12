@@ -47,6 +47,7 @@ class CloudSync(
             goalTitle = s.goalTitle,
             goalProgress = s.goalProgress,
             goalsJson = s.goalsJson,
+            memory = s.memory,
             habitMetaJson = s.habitMetaJson,
             navItems = s.navItems,
         )
@@ -81,6 +82,7 @@ class CloudSync(
                 goalTitle = snap.goalTitle.ifBlank { it.goalTitle },
                 goalProgress = snap.goalProgress,
                 goalsJson = snap.goalsJson.ifBlank { it.goalsJson },
+                memory = snap.memory.ifBlank { it.memory },
                 habitMetaJson = snap.habitMetaJson.ifBlank { it.habitMetaJson },
                 navItems = snap.navItems.ifBlank { it.navItems },
             )

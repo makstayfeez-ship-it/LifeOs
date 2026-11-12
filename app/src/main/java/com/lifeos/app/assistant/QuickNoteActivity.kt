@@ -54,8 +54,8 @@ class QuickNoteActivity : ComponentActivity() {
                         return@LaunchedEffect
                     }
                     Beeps.start()
-                    status = "Говорите заметку… (скажите «готово» или помолчите)"
-                    val text = Dictation.record(listener) { partial = it }
+                    status = "Говорите заметку… Скажите «остановить», чтобы сохранить"
+                    val text = Dictation.record(listener, container.settings.current().googleDictation) { partial = it }
                     if (text.isBlank()) {
                         status = "Ничего не услышано"
                     } else {

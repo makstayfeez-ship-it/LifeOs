@@ -70,6 +70,7 @@ class AssistantService : Service() {
     private var mainJob: Job? = null
     private var sessionJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private val notepad by lazy { NotepadOverlay(this) }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -122,6 +123,7 @@ class AssistantService : Service() {
 
     override fun onDestroy() {
         AssistantStatus.running(false)
+        notepad.hide()
         runCatching { if (wakeLock?.isHeld == true) wakeLock?.release() }
         wakeLock = null
         scope.cancel()
@@ -191,18 +193,42 @@ class AssistantService : Service() {
     /** Быстрая заметка голосом: сигнал, диктовка до паузы, потом текст сохраняется в заметки. Экран не нужен. */
     private suspend fun quickNote(s: AppSettings, inline: String) {
         var text = inline
-        val dictate = text.isBlank()
-        if (dictate) {
-            Beeps.start()
-            text = Dictation.record(listener)
-        }
+        if (text.isBlank()) text = dictateNote(s)
+        else saveNote(text)
         if (text.isBlank()) {
             withTimeoutOrNull(10_000) { container.tts.speakAndWait("Ничего не слышно, заметка не записана", s) }
             return
         }
-        saveNote(text)
-        if (dictate) Beeps.done()
         withTimeoutOrNull(10_000) { container.tts.speakAndWait("Заметка записана", s) }
+    }
+
+    /**
+     * Диктовка с блокнотом: на экране появляется листок, слова вписываются по мере речи, а слово «остановить»
+     * (или кнопка «Сохранить») закрывает запись, и заметка сохраняется. Без разрешения «Поверх других приложений» то же самое без листка.
+     */
+    private suspend fun dictateNote(s: AppSettings): String {
+        val canShow = s.robotEnabled && Settings.canDrawOverlays(this)
+        if (canShow) notepad.show(SkinCatalog.byId(s.skinId))
+        Beeps.start()
+        val d = DictationSession(listener, accurate = s.googleDictation)
+        coroutineScope {
+            val job = launch { d.run { notepad.update(it) } }
+            notepad.onStop = { job.cancel() }
+            job.join()
+        }
+        notepad.onStop = {}
+        val text = d.text
+        if (text.isNotBlank()) {
+            saveNote(text)
+            Beeps.done()
+        }
+        if (canShow) {
+            notepad.update(text)
+            notepad.finish(text.isNotBlank())
+            delay(1300)
+            notepad.hide()
+        }
+        return text
     }
 
     private suspend fun saveNote(text: String) {
@@ -243,17 +269,11 @@ class AssistantService : Service() {
 
                 // «Заметка»: сигнал, диктовка, запись текстом
                 if (cmd is Command.Clarify && cmd.kind == "заметка") {
-                    overlay.setMood(RobotMood.LISTENING)
-                    overlay.say("Записываю… скажите «готово», когда закончите")
-                    Beeps.start()
-                    val note = Dictation.record(listener) { overlay.say(it) }
-                    if (note.isBlank()) {
-                        say("Ничего не слышно", s, RobotMood.THINKING)
-                    } else {
-                        saveNote(note)
-                        Beeps.done()
-                        say("Заметка записана", s, RobotMood.HAPPY)
-                    }
+                    // Робот уступает место блокноту, в котором он сам сидит с карандашом
+                    overlay.hide()
+                    val note = dictateNote(s)
+                    val phrase = if (note.isBlank()) "Ничего не слышно" else "Заметка записана"
+                    withTimeoutOrNull(10_000) { container.tts.speakAndWait(phrase, s) }
                     break
                 }
 

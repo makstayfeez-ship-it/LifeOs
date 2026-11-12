@@ -3,7 +3,9 @@ package com.lifeos.app.assistant
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.SystemClock
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 /** Звуковые сигналы начала и конца записи заметки: понятно, что телефон слушает, даже без экрана. */
 object Beeps {
@@ -28,38 +30,78 @@ object Beeps {
 }
 
 /**
- * Диктовка заметки. Слушает фразу за фразой и склеивает их в один текст. Запись заканчивается, когда вы
- * замолчали на несколько секунд, сказали «готово» или «стоп», либо прошло три минуты.
+ * Диктовка заметки. Слушает фразу за фразой и склеивает их в один текст, пока вы не скажете «остановить»
+ * (или «стоп», «готово», «закончить»), не нажмёте «Сохранить» на блокноте либо не помолчите долго (40 секунд).
+ * Паузы между фразами не мешают: можно думать вслух.
  */
-object Dictation {
-    private val stopWords = setOf("готово", "стоп", "конец", "хватит", "закончить", "сохрани", "сохранить", "всё", "все")
+class DictationSession(
+    private val listener: SpeechListener,
+    private val accurate: Boolean = false,
+    private val idleMs: Long = 40_000,
+    private val maxMs: Long = 600_000,
+) {
+    private val parts = mutableListOf<String>()
 
-    suspend fun record(
-        listener: SpeechListener,
-        maxMs: Long = 180_000,
-        onPartial: (String) -> Unit = {},
-    ): String {
-        val parts = mutableListOf<String>()
+    /** Всё, что записано к этому моменту. Остаётся доступным, даже если запись прервали. */
+    val text: String
+        get() = synchronized(parts) { parts.joinToString(" ").trim().replaceFirstChar { it.uppercase() } }
+
+    suspend fun run(onChange: (String) -> Unit = {}) {
         val started = SystemClock.elapsedRealtime()
-        var emptyTries = 0
-        while (SystemClock.elapsedRealtime() - started < maxMs) {
-            when (val r = listener.listen(accurate = true) { onPartial((parts + it).joinToString(" ")) }) {
+        var lastSpeech = started
+        var errors = 0
+        while (currentCoroutineContext().isActive &&
+            SystemClock.elapsedRealtime() - started < maxMs &&
+            SystemClock.elapsedRealtime() - lastSpeech < idleMs
+        ) {
+            when (val r = listener.listen(accurate) { partial -> onChange((text + " " + partial).trim()) }) {
                 is SpeechResult.Heard -> {
-                    emptyTries = 0
-                    val words = r.text.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }.toMutableList()
-                    val stop = words.isNotEmpty() && words.last().lowercase().trim('.', ',', '!') in stopWords
-                    if (stop) words.removeAt(words.lastIndex)
-                    if (words.isNotEmpty()) parts += words.joinToString(" ")
-                    if (stop) break
+                    errors = 0
+                    lastSpeech = SystemClock.elapsedRealtime()
+                    val words = r.text.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+                    val drop = stopLength(words)
+                    val keep = words.dropLast(drop)
+                    if (keep.isNotEmpty()) synchronized(parts) { parts += keep.joinToString(" ") }
+                    onChange(text)
+                    if (drop > 0) return
                 }
-                SpeechResult.Silence -> {
-                    // Пока ничего не сказали, даём вторую попытку; после начала речи пауза означает конец заметки
-                    if (parts.isNotEmpty() || ++emptyTries >= 2) break
+                SpeechResult.Silence -> errors = 0
+                is SpeechResult.Error -> {
+                    if (r.fatal || ++errors >= 5) return
+                    delay(400)
                 }
-                is SpeechResult.Error -> break
             }
         }
-        val text = parts.joinToString(" ").trim()
-        return text.replaceFirstChar { it.uppercase() }
+    }
+
+    companion object {
+        private val stopWords = setOf(
+            "остановить", "останови", "остановись", "остановите", "стоп", "стоп.", "заверши", "завершить", "закончи", "закончить",
+            "готово", "хватит", "конец", "сохрани", "сохранить", "финиш", "всё", "все",
+        )
+        private val tails = setOf("запись", "заметку", "заметка", "диктовку", "диктовка")
+
+        /** Сколько слов в конце фразы — команда остановки: «… остановить» → 1, «… остановить запись» → 2. */
+        fun stopLength(words: List<String>): Int {
+            fun norm(w: String) = w.lowercase().trim('.', ',', '!', '?')
+            val last = words.lastOrNull()?.let(::norm) ?: return 0
+            if (last in stopWords) return 1
+            val prev = words.getOrNull(words.size - 2)?.let(::norm)
+            if (last in tails && prev != null && prev in stopWords) return 2
+            return 0
+        }
+    }
+}
+
+/** Короткая запись одной заметки без блокнота (для окон, у которых есть свой вид). */
+object Dictation {
+    suspend fun record(
+        listener: SpeechListener,
+        accurate: Boolean = false,
+        onPartial: (String) -> Unit = {},
+    ): String {
+        val d = DictationSession(listener, accurate)
+        d.run(onPartial)
+        return d.text
     }
 }

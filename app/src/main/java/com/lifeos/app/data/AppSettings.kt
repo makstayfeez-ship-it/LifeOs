@@ -50,6 +50,9 @@ data class AppSettings(
     val briefOnLock: Boolean = true,
     val recordBeeps: Boolean = true,
     val googleWake: Boolean = false,
+    val googleDictation: Boolean = false,
+    /** Что помощник помнит о пользователе: по одному факту в строке. */
+    val memory: String = "",
     val muteRecognizerBeep: Boolean = true,
     val speakBrief: Boolean = true,
     // Цель месяца
@@ -102,6 +105,8 @@ private object K {
     val briefOnLock = booleanPreferencesKey("brief_on_lock")
     val recordBeeps = booleanPreferencesKey("record_beeps")
     val googleWake = booleanPreferencesKey("google_wake")
+    val googleDictation = booleanPreferencesKey("google_dictation")
+    val memory = stringPreferencesKey("assistant_memory")
     val muteRecognizerBeep = booleanPreferencesKey("mute_recognizer_beep")
     val speakBrief = booleanPreferencesKey("speak_brief")
     val goalTitle = stringPreferencesKey("goal_title")
@@ -150,6 +155,8 @@ private fun Preferences.toSettings(): AppSettings {
         briefOnLock = this[K.briefOnLock] ?: d.briefOnLock,
         recordBeeps = this[K.recordBeeps] ?: d.recordBeeps,
         googleWake = this[K.googleWake] ?: d.googleWake,
+        googleDictation = this[K.googleDictation] ?: d.googleDictation,
+        memory = this[K.memory] ?: d.memory,
         muteRecognizerBeep = this[K.muteRecognizerBeep] ?: d.muteRecognizerBeep,
         speakBrief = this[K.speakBrief] ?: d.speakBrief,
         goalTitle = this[K.goalTitle] ?: d.goalTitle,
@@ -197,6 +204,8 @@ private fun MutablePreferences.write(s: AppSettings) {
     this[K.briefOnLock] = s.briefOnLock
     this[K.recordBeeps] = s.recordBeeps
     this[K.googleWake] = s.googleWake
+    this[K.googleDictation] = s.googleDictation
+    this[K.memory] = s.memory
     this[K.muteRecognizerBeep] = s.muteRecognizerBeep
     this[K.speakBrief] = s.speakBrief
     this[K.goalTitle] = s.goalTitle

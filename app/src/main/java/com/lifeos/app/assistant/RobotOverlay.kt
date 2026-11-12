@@ -331,7 +331,7 @@ class RobotOverlay(private val context: Context) {
     }
 
     /** Окну вне Activity нужен свой «жизненный цикл», иначе Compose не запустится. */
-    private class OverlayOwner : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
+    internal class OverlayOwner : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
         private val registry = LifecycleRegistry(this)
         private val controller = SavedStateRegistryController.create(this)
         private val store = ViewModelStore()

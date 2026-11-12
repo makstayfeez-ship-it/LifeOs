@@ -92,6 +92,7 @@ data class Snapshot(
     val goalTitle: String = "",
     val goalProgress: Int = 0,
     val goalsJson: String = "",
+    val memory: String = "",
     val habitMetaJson: String = "",
     val navItems: String = "",
 )

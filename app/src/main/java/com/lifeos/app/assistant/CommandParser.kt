@@ -8,7 +8,18 @@ sealed interface Command {
     data class AddShopping(val item: String) : Command
     /** dayOffset: 0 — сегодня, 1 — завтра, 2 — послезавтра. */
     data class AddTask(val title: String, val dayOffset: Int = 0, val timeMinutes: Int? = null) : Command
-    data class AddExpense(val amountRub: Long, val category: String, val title: String) : Command
+    data class AddExpense(val amountRub: Long, val category: String, val title: String, val income: Boolean = false) : Command
+
+    /** Пример, посчитанный на телефоне: expr — как мы его поняли, result — ответ. */
+    data class Calc(val expr: String, val result: Double) : Command
+
+    /** Запомнить факт о пользователе («запомни, что я люблю кофе без сахара»). */
+    data class Remember(val fact: String) : Command
+
+    // ---- Экран (нужен доступ в специальных возможностях) ----
+    data object ScreenRead : Command
+    data class ScreenClick(val text: String) : Command
+    data class ScreenScroll(val down: Boolean) : Command
 
     /** Не хватило данных (например, времени для будильника). kind: "будильник" или "таймер". */
     data class Clarify(val question: String, val kind: String) : Command
@@ -119,7 +130,7 @@ object CommandParser {
         return m.groupValues[1].trim()
     }
 
-    fun parse(raw: String, nowMinutes: Int): Command {
+    fun parse(raw: String, nowMinutes: Int, today: java.time.LocalDate = java.time.LocalDate.now()): Command {
         val orig = raw.trim()
         val t = normalize(raw)
         val tokens = if (t.isEmpty()) emptyList() else t.split(" ")
@@ -141,7 +152,24 @@ object CommandParser {
             else Command.Clarify("На какое время поставить будильник?", "будильник")
         }
 
+        // Экран: нужен доступ в специальных возможностях
+        if (Regex("^(?:что|чего)\\s+(?:сейчас\\s+)?(?:у меня\\s+)?(?:на экране|происходит на экране)|^прочитай (?:мне )?экран|^посмотри на экран|^что ты видишь").containsMatchIn(t)) {
+            return Command.ScreenRead
+        }
+        Regex("^(?:нажми|нажать|тапни|кликни|клацни)\\s+(?:на\\s+)?(.+)$").find(t)?.let { return Command.ScreenClick(clean(it.groupValues[1])) }
+        Regex("^(?:прокрути|пролистай|листай|скролль|промотай)\\p{L}*(?:\\s+экран)?(?:\\s+(вниз|вверх|ниже|выше|дальше|назад))?$").find(t)?.let {
+            val dir = it.groupValues[1]
+            return Command.ScreenScroll(down = dir != "вверх" && dir != "выше" && dir != "назад")
+        }
+
         deviceCommand(orig, t)?.let { return it }
+
+        // Примеры считаем сами, без интернета: «сколько будет пятнадцать умножить на три»
+        Calc.fromSpeech(orig)?.let { return Command.Calc(it.first, it.second) }
+
+        // «Запомни, что я люблю кофе без сахара» — это факт о пользователе, а не заметка
+        Regex("^(?:запомни|помни|запиши себе|запомните)[,\\s]+(?:что\\s+)?((?:я|мне|мой|моя|моё|мое|мои|мою|меня|у меня|моего|моей|моих|мы|нас|у нас)\\s.+)$", RegexOption.IGNORE_CASE)
+            .find(orig)?.let { return Command.Remember(clean(it.groupValues[1])) }
 
         // Покупки проверяем раньше заметок: «запиши молоко в список покупок».
         val shoppingPatterns = listOf(
@@ -153,20 +181,31 @@ object CommandParser {
             rx.find(orig)?.let { return Command.AddShopping(clean(it.groupValues[1])) }
         }
 
-        Regex("^(?:потратил|потратила|расход|трата|заплатил|заплатила|купил|купила)\\p{L}*\\s+(\\d+)\\s*(?:руб\\p{L}*|р)?\\s*(?:на\\s+)?(.*)$")
-            .find(t)?.let {
-                val amount = it.groupValues[1].toLongOrNull()
-                if (amount != null) {
-                    val rest = it.groupValues[2].trim()
-                    val category = guessCategory(rest)
-                    return Command.AddExpense(amount, category, rest.ifBlank { category })
+        // Расходы и доходы. Сумму можно продиктовать словами: «потратил пятьсот рублей на кофе»
+        Regex("^(потратил|потратила|расход|трата|заплатил|заплатила|купил|купила|получил|получила|заработал|заработала|доход|зарплата|пришло)\\p{L}*\\s+(.+)$")
+            .find(t)?.let { m ->
+                val income = m.groupValues[1].let { it.startsWith("получил") || it.startsWith("заработал") || it.startsWith("доход") || it.startsWith("зарплата") || it.startsWith("пришло") }
+                val tk2 = m.groupValues[2].split(" ").filter { it.isNotEmpty() }
+                val n = Calc.numberAt(tk2, 0)
+                if (n != null && n.first > 0) {
+                    var rest = tk2.drop(n.second)
+                    if (rest.firstOrNull()?.let { it.startsWith("руб") || it == "р" || it == "р." } == true) rest = rest.drop(1)
+                    if (rest.firstOrNull() == "на" || rest.firstOrNull() == "за") rest = rest.drop(1)
+                    val what = rest.joinToString(" ").trim()
+                    val category = if (income) "Доход" else guessCategory(what)
+                    return Command.AddExpense(n.first, category, what.ifBlank { category }, income)
                 }
             }
 
         Regex("^(?:добавь|создай|поставь|запиши)\\s+(?:мне\\s+)?(?:задачу|дело|задача)[\\s:,-]*(.+)$", RegexOption.IGNORE_CASE)
-            .find(orig)?.let { return task(clean(it.groupValues[1]), nowMinutes) }
-        Regex("^напомни(?:\\s+мне)?\\s+(.+)$", RegexOption.IGNORE_CASE)
-            .find(orig)?.let { return task(clean(it.groupValues[1]), nowMinutes, remind = true) }
+            .find(orig)?.let { return task(clean(it.groupValues[1]), nowMinutes, today) }
+        if (Regex("^(?:напомни|напомнить|напоминание)(?:\\s+мне)?$|^(?:поставь|создай|добавь|сделай)\\s+(?:мне\\s+)?напоминани\\p{L}*$").containsMatchIn(t)) {
+            return Command.Clarify("Что и когда напомнить?", "напомни")
+        }
+        Regex("^напомни(?:\\s+мне)?[\\s,:-]+(.+)$", RegexOption.IGNORE_CASE)
+            .find(orig)?.let { return task(clean(it.groupValues[1]), nowMinutes, today, remind = true) }
+        Regex("^(?:поставь|создай|добавь|сделай)\\s+(?:мне\\s+)?напоминани\\p{L}*[\\s,:-]*(?:на|о|про|что)?\\s*(.+)$", RegexOption.IGNORE_CASE)
+            .find(orig)?.let { return task(clean(it.groupValues[1]), nowMinutes, today, remind = true) }
 
         // «Сделай заметку» без текста: спрашиваем, что записать
         if (noteTrigger(orig) == "") return Command.Clarify("Что записать?", "заметка")
@@ -181,41 +220,229 @@ object CommandParser {
         return Command.Chat(orig)
     }
 
-    // ---------- задачи с датой ----------
+    // ---------- задачи и напоминания с датой ----------
 
-    /** «завтра в 10 позвонить маме» → задача на завтра, 10:00, название «позвонить маме». */
-    private fun task(text: String, nowMinutes: Int, remind: Boolean = false): Command {
-        val t = normalize(text)
-        val tk = if (t.isEmpty()) emptyList() else t.split(" ")
-        var day = when {
-            tk.contains("послезавтра") -> 2
-            tk.contains("завтра") -> 1
-            else -> 0
+    private val weekdayWords = mapOf(
+        "понедельник" to 1, "вторник" to 2, "среду" to 3, "среда" to 3, "четверг" to 4,
+        "пятницу" to 5, "пятница" to 5, "субботу" to 6, "суббота" to 6, "воскресенье" to 7,
+    )
+    private val monthStems = listOf(
+        "январ" to 1, "феврал" to 2, "март" to 3, "апрел" to 4, "мая" to 5, "июн" to 6,
+        "июл" to 7, "август" to 8, "сентябр" to 9, "октябр" to 10, "ноябр" to 11, "декабр" to 12,
+    )
+    private val ordinalDays: Map<String, Int> = buildMap {
+        val base = listOf(
+            "перв" to 1, "втор" to 2, "четвертый" to 4, "пят" to 5, "шест" to 6, "седьм" to 7, "восьм" to 8, "девят" to 9,
+            "десят" to 10, "одиннадцат" to 11, "двенадцат" to 12, "тринадцат" to 13, "четырнадцат" to 14, "пятнадцат" to 15,
+            "шестнадцат" to 16, "семнадцат" to 17, "восемнадцат" to 18, "девятнадцат" to 19, "двадцат" to 20, "тридцат" to 30,
+        )
+        for ((stem, v) in base) for (end in listOf("ого", "ое")) put(stem + end, v)
+        put("третьего", 3); put("третье", 3); put("четвертого", 4); put("четвертое", 4); put("четвёртого", 4); put("четвёртое", 4)
+    }
+    private val prepositions = setOf("в", "во", "на", "к", "до", "с")
+    private val dateModifiers = setOf("эту", "этот", "это", "следующий", "следующую", "следующее", "ближайший", "ближайшую", "ближайшее")
+    private val periodWords = setOf("утра", "дня", "вечера", "ночи")
+    private val titleFillers = setOf("что", "чтобы", "надо", "нужно", "мне")
+
+    private fun isDigits(w: String) = w.isNotEmpty() && w.all { it.isDigit() }
+
+    /** «15», «15-го», «пятнадцатого», «двадцать пятого» → (день, сколько слов). */
+    private fun readDayOfMonth(lt: List<String>, i: Int): Pair<Int, Int>? {
+        val w = lt.getOrNull(i) ?: return null
+        Regex("^(\\d{1,2})(?:-?(?:го|е|ое|й))?$").find(w)?.let { m ->
+            val d = m.groupValues[1].toInt()
+            if (d in 1..31) return d to 1
         }
-        val time = parseTime(t, tk, nowMinutes)
+        ordinalDays[w]?.let { return it to 1 }
+        // «двадцать пятого», «тридцать первого»
+        val tensWord = mapOf("двадцать" to 20, "тридцать" to 30)[w]
+        if (tensWord != null) {
+            val next = lt.getOrNull(i + 1)?.let { ordinalDays[it] }
+            if (next != null && next in 1..9) return (tensWord + next) to 2
+        }
+        return null
+    }
+
+    private fun monthOf(w: String?): Int? = if (w == null) null else monthStems.firstOrNull { w.startsWith(it.first) }?.second
+
+    private data class Marked(val offset: Int?, val remove: BooleanArray)
+
+    /** Находит в фразе день: «завтра», «в пятницу», «15 ноября», «15 числа», «через неделю». Отмечает слова, которые к названию не относятся. */
+    private fun extractDate(lt: List<String>, today: java.time.LocalDate): Marked {
+        val rm = BooleanArray(lt.size)
+        var offset: Int? = null
+        fun markPrefix(i: Int) {
+            var j = i - 1
+            if (j >= 0 && lt[j] in dateModifiers) { rm[j] = true; j-- }
+            if (j >= 0 && lt[j] in prepositions) rm[j] = true
+        }
+        var i = 0
+        while (i < lt.size) {
+            val w = lt[i]
+            when {
+                w == "сегодня" -> { offset = 0; rm[i] = true }
+                w == "завтра" -> { offset = 1; rm[i] = true }
+                w == "послезавтра" -> { offset = 2; rm[i] = true }
+                w == "после" && lt.getOrNull(i + 1) == "завтра" -> { offset = 2; rm[i] = true; rm[i + 1] = true; i++ }
+                w in weekdayWords && offset == null -> {
+                    val target = weekdayWords.getValue(w)
+                    val now = today.dayOfWeek.value
+                    var plain = ((target - now + 7) % 7)
+                    if (plain == 0) plain = 7
+                    val next = i > 0 && (lt[i - 1].startsWith("следующ") || (i > 1 && lt[i - 2].startsWith("следующ")))
+                    offset = if (next && target > now) plain + 7 else plain
+                    rm[i] = true
+                    markPrefix(i)
+                }
+                w == "через" && offset == null -> {
+                    // «через неделю», «через 3 дня», «через две недели»; часы и минуты разбирает parseTime
+                    val n = readNumber(lt, i + 1)
+                    val unitIdx = i + 1 + (n?.second ?: 0)
+                    val unit = lt.getOrNull(unitIdx).orEmpty()
+                    val count = n?.first ?: 1
+                    val days = when {
+                        unit.startsWith("недел") -> count * 7
+                        unit.startsWith("дн") || unit.startsWith("день") || unit == "дня" -> count
+                        unit.startsWith("месяц") -> count * 30
+                        else -> null
+                    }
+                    if (days != null) {
+                        offset = days
+                        for (k in i..unitIdx) rm[k] = true
+                        i = unitIdx
+                    }
+                }
+                else -> {
+                    val d = readDayOfMonth(lt, i)
+                    if (d != null && offset == null) {
+                        val after = i + d.second
+                        val month = monthOf(lt.getOrNull(after))
+                        val isNumsOrdinal = isDigits(w.substringBefore('-')) || ordinalDays.containsKey(w) || w in setOf("двадцать", "тридцать")
+                        if (month != null && isNumsOrdinal) {
+                            var date = runCatching { java.time.LocalDate.of(today.year, month, d.first) }.getOrNull()
+                            if (date != null && date.isBefore(today)) date = date.plusYears(1)
+                            if (date != null) {
+                                offset = (date.toEpochDay() - today.toEpochDay()).toInt()
+                                for (k in i..after) rm[k] = true
+                                markPrefix(i)
+                                i = after
+                            }
+                        } else if (lt.getOrNull(after) == "числа" && isNumsOrdinal) {
+                            var date = runCatching { java.time.LocalDate.of(today.year, today.monthValue, d.first) }.getOrNull()
+                            if (date == null || date.isBefore(today)) {
+                                val nm = today.plusMonths(1)
+                                date = runCatching { java.time.LocalDate.of(nm.year, nm.monthValue, d.first) }.getOrNull()
+                            }
+                            if (date != null) {
+                                offset = (date.toEpochDay() - today.toEpochDay()).toInt()
+                                for (k in i..after) rm[k] = true
+                                markPrefix(i)
+                                i = after
+                            }
+                        }
+                    }
+                }
+            }
+            i++
+        }
+        return Marked(offset, rm)
+    }
+
+    /** Отмечает слова, из которых состоит указание времени: «в 15:00», «в три часа дня», «через 2 часа». */
+    private fun markTime(lt: List<String>): BooleanArray {
+        val rm = BooleanArray(lt.size)
+        var i = 0
+        while (i < lt.size) {
+            val w = lt[i]
+            when {
+                w == "через" -> {
+                    // «через», затем число, затем единица времени
+                    var j = i + 1
+                    val n = readNumber(lt, j)
+                    if (n != null) j += n.second
+                    val unit = lt.getOrNull(j).orEmpty()
+                    if (unit.startsWith("час") || unit.startsWith("минут") || unit.startsWith("секунд") || lt.getOrNull(i + 1) == "полчаса") {
+                        val end = if (lt.getOrNull(i + 1) == "полчаса") i + 1 else j
+                        for (k in i..end) rm[k] = true
+                        // «через час тридцать минут»
+                        i = end
+                    }
+                }
+                Regex("^\\d{1,2}[:.]\\d{2}$").matches(w) -> {
+                    rm[i] = true
+                    if (i > 0 && lt[i - 1] in prepositions) rm[i - 1] = true
+                    if (lt.getOrNull(i + 1) in periodWords) rm[i + 1] = true
+                }
+                w in setOf("в", "на", "к") -> {
+                    val n = readNumber(lt, i + 1)
+                    if (n != null && n.first in 0..24) {
+                        var j = i + 1 + n.second
+                        // «в 7 30» и «в семь тридцать»
+                        var hasMinutes = false
+                        if (lt.getOrNull(j)?.startsWith("час") == true) j++
+                        val m = readNumber(lt, j)
+                        if (m != null && m.first in 0..59 && lt.getOrNull(j)?.let { unitSeconds(it) } == 0) {
+                            j += m.second
+                            hasMinutes = true
+                        }
+                        while (hasMinutes && lt.getOrNull(j) in setOf("ноль", "нуль")) j++
+                        if (lt.getOrNull(j)?.startsWith("минут") == true) j++
+                        if (lt.getOrNull(j) in periodWords) j++
+                        for (k in i until j) rm[k] = true
+                        i = j - 1
+                    }
+                }
+            }
+            i++
+        }
+        return rm
+    }
+
+    /**
+     * «Завтра в 10 позвонить маме» → задача на завтра, 10:00. «Напомни в пятницу в три часа дня про врача» → напоминание на ближайшую пятницу.
+     * Если для напоминания не хватает времени или сути, помощник переспрашивает.
+     */
+    private fun task(text: String, nowMinutes: Int, today: java.time.LocalDate, remind: Boolean = false): Command {
+        val ot = text.split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val lt = ot.map { it.lowercase().trim(',', '.', '!', '?', ':', ';') }
+
+        val dateMark = extractDate(lt, today)
+        val dateOffset = dateMark.offset
+
+        // Время ищем среди слов, которые не ушли на дату, чтобы «в 15 ноября» не стало 15:00
+        val keep = lt.indices.filter { !dateMark.remove[it] }
+        val lt2 = keep.map { lt[it] }
+        val time = parseTime(lt2.joinToString(" "), lt2, nowMinutes)
+        val timeMark = markTime(lt2)
+
+        val removed = dateMark.remove.copyOf()
+        keep.forEachIndexed { k, orig -> if (timeMark[k]) removed[orig] = true }
+
+        var day = dateOffset ?: 0
         if (time != null) {
             val minutes = time.first * 60 + time.second
-            val viaIdx = tk.indexOf("через")
-            if (viaIdx >= 0) {
+            val viaIdx = lt2.indexOf("через")
+            if (viaIdx >= 0 && dateOffset == null) {
                 // «через 30 минут» около полуночи может означать уже завтра
-                val sec = durationSeconds(tk.drop(viaIdx)) ?: 0
+                val sec = durationSeconds(lt2.drop(viaIdx)) ?: 0
                 day += (nowMinutes + (sec + 59) / 60) / 1440
-            } else if (remind && day == 0 && !tk.contains("сегодня") && minutes <= nowMinutes) {
+            } else if (remind && dateOffset == null && minutes <= nowMinutes) {
                 // «Напомни в 9», когда уже позже 9, значит завтра
                 day = 1
             }
         }
-        // Границы слов задаём сами: \\b по-разному относится к кириллице в разных средах
-        val start = "(?<![\\p{L}\\p{N}])"
-        val end = "(?![\\p{L}\\p{N}])"
-        var title = text
-            .replace(Regex("(?i)" + start + "(?:послезавтра|завтра|сегодня)" + end), " ")
-            .replace(Regex("(?i)" + start + "(?:в|на|к)\\s+\\d{1,2}(?:[: .]\\d{2})?(?:\\s*(?:утра|дня|вечера|ночи))?(?![\\d:])"), " ")
-            .replace(Regex("(?i)" + start + "через\\s+\\S+\\s+\\p{L}+"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim(' ', ',', '.')
-        if (title.isBlank()) title = clean(text)
-        return Command.AddTask(title, day, time?.let { it.first * 60 + it.second })
+
+        var titleTokens = ot.filterIndexed { i, _ -> !removed[i] }.toMutableList()
+        while (titleTokens.isNotEmpty() && titleTokens.first().lowercase().trim(',', ':') in titleFillers) titleTokens.removeAt(0)
+        val title = titleTokens.joinToString(" ").trim(' ', ',', '.', '-', ':').replaceFirstChar { it.uppercase() }
+
+        if (remind) {
+            val known = text.trim()
+            if (title.isBlank()) return Command.Clarify("Что напомнить?", "напомни $known")
+            if (time == null) return Command.Clarify("Во сколько напомнить?", "напомни $known")
+        }
+        val finalTitle = title.ifBlank { clean(text).replaceFirstChar { it.uppercase() } }
+        return Command.AddTask(finalTitle, day, time?.let { it.first * 60 + it.second })
     }
 
     // ---------- функции телефона ----------
