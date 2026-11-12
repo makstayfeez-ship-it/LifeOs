@@ -67,6 +67,7 @@ fun AssistantCheckScreen(vm: AppViewModel, onBack: () -> Unit) {
     val recognizerOk = voskReady || googleOk
     val systemDefault = remember(tick) { SystemAssistant.isDefault(context) }
     val overlayOk = remember(tick) { Perms.canOverlay(context) }
+    val watcherOk = remember(tick) { Perms.watcherEnabled(context) }
     val batteryOk = remember(tick) {
         context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName)
     }
@@ -138,6 +139,25 @@ fun AssistantCheckScreen(vm: AppViewModel, onBack: () -> Unit) {
                     },
                     Modifier.padding(top = 6.dp),
                 )
+            }
+        }
+
+        SectionTitle("Дополнительно: ум и управление экраном")
+        InfoCard(Modifier.fillMaxWidth()) {
+            CheckRow(
+                "ИИ подключён",
+                s.apiKey.isNotBlank(),
+                if (s.apiKey.isNotBlank()) "Помощник отвечает на любые вопросы и сам выбирает действия"
+                else "Без ключа помощник понимает только готовые команды. Ключ с console.anthropic.com вставляется в «Настройках помощника»",
+            )
+            CheckRow(
+                "Видит экран и управляет им",
+                watcherOk,
+                if (watcherOk) "Включено: «что на экране», «нажми …», «прокрути вниз» работают"
+                else "Нужен специальный доступ Android, без него помощнику нельзя смотреть на экран и нажимать кнопки. Включается один раз",
+                last = true,
+            ) {
+                PillButton("Включить доступ", { context.startActivity(Perms.accessibilitySettings()) }, Modifier.padding(top = 6.dp))
             }
         }
 

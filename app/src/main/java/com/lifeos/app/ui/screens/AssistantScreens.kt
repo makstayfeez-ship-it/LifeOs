@@ -320,6 +320,12 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () ->
             subtitle = "Короткий звук в начале и в конце записи, чтобы было слышно, что телефон слушает.",
         )
         SwitchRow(
+            "Точная диктовка через Google",
+            s.googleDictation,
+            { on -> vm.update { it.copy(googleDictation = on) } },
+            subtitle = "Заметки диктуются офлайн-моделью. Если она ошибается в словах, включите: тогда заметки понимает Google (нужен интернет, возможен писк в начале каждой фразы).",
+        )
+        SwitchRow(
             "Показывать робота на экране",
             s.robotEnabled,
             { on -> vm.update { it.copy(robotEnabled = on) } },
@@ -334,10 +340,32 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () ->
             overlayOk,
         ) { context.startActivity(Perms.overlaySettings(context)) }
         PermissionRow(
-            "Робот видит экран",
-            "Необязательно. Робот будет уходить с кнопок и полей ввода. Тексты не читаются.",
+            "Помощник видит экран и управляет им",
+            "Чтобы он мог читать, что на экране, нажимать кнопки, листать и вводить текст («нажми отправить», «прокрути вниз», «что на экране»), " +
+                "нужен специальный доступ Android. Без него это технически невозможно: система не даёт приложениям смотреть на экран и нажимать за вас. " +
+                "Включается один раз: Открыть → LifeOS → переключатель. Пароли и данные карт помощник не читает.",
             watcherOk,
         ) { context.startActivity(Perms.accessibilitySettings()) }
+        if (!watcherOk) {
+            Text(
+                "Если переключатель серый и написано «Ограниченная настройка»: откройте Настройки → Приложения → LifeOS, нажмите ⋮ в правом верхнем углу " +
+                    "и выберите «Разрешить ограниченные настройки», потом снова включите доступ.",
+                color = GrayText,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            PillButton(
+                "Открыть сведения о приложении",
+                {
+                    context.startActivity(
+                        Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:${context.packageName}"))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                },
+                Modifier.padding(bottom = 8.dp),
+                outlined = true,
+            )
+        }
 
         PermissionRow(
             "Контакты и звонки",
@@ -356,19 +384,44 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () ->
                 "• «открой настройки Wi-Fi» (сам переключатель Android включать не даёт, откроет нужный экран)\n" +
                 "• «назад», «домой», «последние приложения», «шторка», «заблокируй экран» (нужен пункт «Робот видит экран»)\n" +
                 "• «который час», «сколько заряда», «какая погода», «что у меня сегодня», «прочитай заметки»\n" +
-                "• любой вопрос, если вставлен ключ ИИ",
+                "• напоминания: «напомни в 15:00 позвонить маме», «напомни завтра в 15:00 купить билеты», «напомни в пятницу в 18:30 про встречу», «напомни 20 числа оплатить интернет»\n" +
+                "• счёт: «сколько будет 15 умножить на 23», «посчитай 18 процентов от 4500», «корень из 144»\n" +
+                "• «запомни, что у меня аллергия на орехи» (помощник будет учитывать это дальше)\n" +
+                "• экран (нужен доступ выше): «что на экране», «нажми отправить», «прокрути вниз»\n" +
+                "• любой вопрос и сложная просьба своими словами, если вставлен ключ ИИ: помощник сам решит, что сделать (будильник, заметка, поиск…)",
             color = GrayText,
             style = MaterialTheme.typography.bodySmall,
         )
 
-        SectionTitle("Разговор с ИИ")
+        SectionTitle("ИИ внутри помощника")
+        InfoCard(Modifier.fillMaxWidth()) {
+            Text(
+                if (s.apiKey.isBlank()) "ИИ не подключён" else "✓ ИИ подключён",
+                color = if (s.apiKey.isBlank()) Snow else Color(0xFF4CD964),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                if (s.apiKey.isBlank())
+                    "Сейчас помощник понимает только готовые команды (будильник, заметка, напоминание, счёт, звонок). Чтобы он отвечал на любые вопросы, " +
+                        "решал задачи как я, сам ставил будильники и делал заметки по свободной фразе и запоминал вас, подключите ИИ."
+                else
+                    "Помощник отвечает на любые вопросы, решает задачи и сам вызывает нужные действия: будильник, таймер, напоминание, заметку, покупки, расход, поиск, звонок, экран.",
+                color = GrayText,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
         Text(
-            "Чтобы помощник отвечал на любые вопросы, вставьте ключ Anthropic API. Он хранится только на этом телефоне.",
+            "Как получить ключ (5 минут):\n" +
+                "1. Откройте console.anthropic.com и войдите по почте.\n" +
+                "2. Раздел Billing: пополните баланс на несколько долларов (ключ работает отдельно от подписки Claude и оплачивается за использование).\n" +
+                "3. Раздел API Keys → Create Key, скопируйте ключ (начинается с sk-ant-).\n" +
+                "4. Вставьте его ниже и нажмите «Сохранить ключ». Он хранится только на этом телефоне.",
             color = GrayText,
             style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(bottom = 8.dp),
+            modifier = Modifier.padding(top = 10.dp, bottom = 8.dp),
         )
-        LifeField(key, { key = it }, "Ключ ИИ", password = true)
+        LifeField(key, { key = it }, "Ключ ИИ (sk-ant-…)", password = true)
         PillButton(
             "Сохранить ключ",
             { vm.update { it.copy(apiKey = key.trim()) } },
@@ -376,6 +429,31 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () ->
             enabled = key.trim() != s.apiKey,
             outlined = true,
         )
+
+        SectionTitle("Что помощник помнит о вас")
+        val facts = s.memory.lines().filter { it.isNotBlank() }
+        Text(
+            "Скажите «запомни, что …», и помощник будет учитывать это в разговорах. Так он узнаёт вас лучше со временем. Удалить можно любой пункт.",
+            color = GrayText,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        if (facts.isEmpty()) {
+            Text("Пока ничего не запомнил.", color = GrayText, style = MaterialTheme.typography.bodyMedium)
+        } else {
+            facts.forEach { fact ->
+                InfoCard(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(fact, color = Snow, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = 8.dp))
+                        PillButton(
+                            "Забыть",
+                            { vm.update { st -> st.copy(memory = st.memory.lines().filter { l -> l.isNotBlank() && l != fact }.joinToString("\n")) } },
+                            outlined = true,
+                        )
+                    }
+                }
+            }
+        }
 
         SectionTitle("Мгновенная заметка голосом")
         Text(
@@ -385,7 +463,9 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () ->
                 "• Виджет-микрофон на рабочем столе: раздел «Виджеты».\n" +
                 "• Долгое нажатие на иконку LifeOS: «Голосовая заметка».\n" +
                 "• Кнопка «Заметка» в уведомлении, пока включено прослушивание.\n" +
-                "• Голосом: «LifeOS, запиши …», даже когда экран выключен.",
+                "• Голосом: «LifeOS, запиши …», даже когда экран выключен.\n" +
+                "Если сказать просто «заметка» (без текста), на экране появится блокнот с роботом: говорите, слова вписываются на листок, " +
+                "а слово «остановить» (или кнопка «Сохранить») завершает запись и сохраняет заметку.",
             color = GrayText,
             style = MaterialTheme.typography.bodySmall,
         )
