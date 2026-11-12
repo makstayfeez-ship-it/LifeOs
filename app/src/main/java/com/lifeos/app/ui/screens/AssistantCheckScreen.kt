@@ -177,8 +177,31 @@ fun AssistantCheckScreen(vm: AppViewModel, onBack: () -> Unit) {
                 color = GrayText,
                 style = MaterialTheme.typography.bodySmall,
             )
+            val fmt = java.text.SimpleDateFormat("dd.MM HH:mm:ss", java.util.Locale("ru"))
+            fun whenText(t: Long) = if (t == 0L) "ни разу" else fmt.format(java.util.Date(t))
+            val lastSession = remember(tick) { SystemAssistant.last(context, SystemAssistant.KEY_SESSION) }
+            val lastWindow = remember(tick) { SystemAssistant.last(context, SystemAssistant.KEY_ACTIVITY) }
             if (systemDefault) {
                 Text("✓ LifeOS выбран помощником", color = androidx.compose.ui.graphics.Color(OK_COLOR), modifier = Modifier.padding(top = 10.dp))
+                Text(
+                    "Система позвала помощника: ${whenText(lastSession)}\nОкно помощника открывалось: ${whenText(lastWindow)}",
+                    color = Snow,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                Text(
+                    "Удержите кнопку питания и вернитесь сюда. Если «Система позвала помощника» не изменилось, телефон не отдаёт эту кнопку " +
+                        "стороннему помощнику: в настройках телефона найдите пункт про кнопку питания или жесты и включите там вызов помощника.",
+                    color = GrayText,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+                PillButton(
+                    "Проверить окно помощника",
+                    { context.startActivity(Intent(context, com.lifeos.app.assistant.AssistLaunchActivity::class.java)) },
+                    Modifier.padding(top = 8.dp),
+                    outlined = true,
+                )
             } else {
                 PillButton(
                     "Выбрать помощником",

@@ -28,7 +28,11 @@ import org.vosk.Model
  */
 object VoskModel {
     private const val NAME = "vosk-model-small-ru-0.22"
-    private const val ZIP_URL = "https://alphacephei.com/vosk/models/$NAME.zip"
+    // Сначала зеркало на GitHub (оно надёжнее открывается), потом сайт разработчиков Vosk
+    private val URLS = listOf(
+        "https://github.com/makstayfeez-ship-it/LifeOs/releases/download/vosk-model-ru/$NAME.zip",
+        "https://alphacephei.com/vosk/models/$NAME.zip",
+    )
     private const val APPROX_BYTES = 47_000_000L
 
     data class State(val downloading: Boolean = false, val percent: Int = 0, val error: String = "")
@@ -91,16 +95,35 @@ object VoskModel {
 
     private fun download(app: Context) {
         _state.value = State(downloading = true)
+        var lastError = ""
+        for (url in URLS) {
+            val ok = try {
+                downloadFrom(app, url)
+                true
+            } catch (e: Exception) {
+                lastError = e.message?.take(80) ?: e.javaClass.simpleName
+                false
+            }
+            if (ok) {
+                _state.value = State()
+                return
+            }
+        }
+        _state.value = State(error = "Не удалось скачать ($lastError). Проверьте интернет и нажмите «Скачать» ещё раз")
+    }
+
+    private fun downloadFrom(app: Context, url: String) {
         val tmp = File(root(app), "tmp")
         try {
             tmp.deleteRecursively()
             tmp.mkdirs()
-            val conn = (URL(ZIP_URL).openConnection() as HttpURLConnection).apply {
+            _state.value = State(downloading = true)
+            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 20_000
                 readTimeout = 30_000
                 instanceFollowRedirects = true
             }
-            if (conn.responseCode !in 200..299) error("HTTP ${conn.responseCode}")
+            if (conn.responseCode !in 200..299) error("ответ сервера ${conn.responseCode}")
             val total = conn.contentLengthLong.takeIf { it > 0 } ?: APPROX_BYTES
             var read = 0L
             var shown = -1
@@ -127,10 +150,9 @@ object VoskModel {
             if (!extracted.renameTo(dir(app))) error("не удалось сохранить модель")
             marker(app).writeText("ok")
             tmp.deleteRecursively()
-            _state.value = State()
         } catch (e: Exception) {
             tmp.deleteRecursively()
-            _state.value = State(error = "Не удалось скачать. Проверьте интернет и нажмите «Скачать» ещё раз")
+            throw e
         }
     }
 

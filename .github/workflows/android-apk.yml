@@ -52,6 +52,21 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # Русская модель речи (около 45 МБ): один раз выкладываем на Releases, оттуда её скачивает приложение
+      - name: Mirror speech model to Releases (once)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view vosk-model-ru > /dev/null 2>&1; then
+            curl -fL --retry 3 -o vosk-model-small-ru-0.22.zip https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip
+            sha="${{ github.event.pull_request.head.sha || github.sha }}"
+            gh release create vosk-model-ru vosk-model-small-ru-0.22.zip \
+              --title "Русская модель речи (Vosk)" \
+              --notes "Модель для офлайн-распознавания (лицензия Apache 2.0, проект Vosk). Приложение скачивает её само." \
+              --target "$sha" --latest=false
+          fi
+
       # Готовый APK кладём на страницу Releases: его скачивают одним нажатием, без архива
       - name: Publish APK to Releases
         continue-on-error: true
