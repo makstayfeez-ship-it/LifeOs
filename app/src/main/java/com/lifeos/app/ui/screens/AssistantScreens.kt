@@ -299,6 +299,12 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () ->
             subtitle = "Помощник отзывается на голос, даже когда экран выключен. В шторке появится уведомление.",
         )
         SwitchRow(
+            "Слушать через Google, даже если будет пищать",
+            s.googleWake,
+            { on -> vm.update { it.copy(googleWake = on) } },
+            subtitle = "Без офлайн-модели речи постоянное прослушивание выключено, потому что служба Google пищит при каждом перезапуске. Включайте, только если не хотите качать модель.",
+        )
+        SwitchRow(
             "Приглушать писк распознавания",
             s.muteRecognizerBeep,
             { on ->

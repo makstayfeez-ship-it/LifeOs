@@ -63,7 +63,9 @@ class MainActivity : FragmentActivity() {
         if (savedInstanceState == null) {
             lifecycleScope.launch {
                 val s = container.settings.current()
-                if (s.wakeEnabled) AssistantControl.startListening(this@MainActivity)
+                if (s.wakeEnabled && (com.lifeos.app.assistant.VoskModel.isReady(this@MainActivity) || s.googleWake)) {
+                    AssistantControl.startListening(this@MainActivity)
+                }
                 // Офлайн-модель речи скачиваем сами, но только по безлимитному Wi‑Fi (около 45 МБ)
                 if (s.wakeEnabled && !com.lifeos.app.assistant.VoskModel.isReady(this@MainActivity) &&
                     com.lifeos.app.assistant.VoskModel.onUnmeteredNetwork(this@MainActivity)

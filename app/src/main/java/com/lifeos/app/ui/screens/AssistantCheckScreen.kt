@@ -46,6 +46,7 @@ fun assistantProblems(context: android.content.Context, wakeEnabled: Boolean): I
     var n = 0
     if (!AssistantControl.hasMic(context)) n++
     if (!SpeechListener(context).available()) n++
+    if (!VoskModel.isReady(context)) n++
     if (!Perms.canOverlay(context)) n++
     if (!wakeEnabled) n++
     return n
@@ -101,6 +102,7 @@ fun AssistantCheckScreen(vm: AppViewModel, onBack: () -> Unit) {
                 s.wakeEnabled && status.running,
                 when {
                     !s.wakeEnabled -> "Выключено в настройках"
+                    !voskReady && !s.googleWake -> "Ждёт офлайн-модель: пока её нет, постоянное прослушивание выключено, чтобы не пищало. Скачайте модель ниже"
                     status.running -> "Слушаю"
                     else -> "Включено, но служба не работает"
                 },

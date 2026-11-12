@@ -151,6 +151,12 @@ class AssistantService : Service() {
                 stopSelf()
                 return
             }
+            // Постоянно слушать через службу Google нельзя: она пищит при каждом перезапуске. Ждём офлайн-модель.
+            if (!listener.offline && !s.googleWake) {
+                AssistantStatus.error("Постоянное прослушивание выключено, пока не скачана офлайн-модель речи (иначе будет пищать). Скачайте её в «Проверке помощника»")
+                stopSelf()
+                return
+            }
             when (val r = listener.listen()) {
                 is SpeechResult.Heard -> {
                     failures = 0

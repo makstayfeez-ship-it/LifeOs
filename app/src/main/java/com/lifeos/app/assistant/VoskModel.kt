@@ -3,6 +3,7 @@ package com.lifeos.app.assistant
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import com.lifeos.app.container
 import java.io.File
 import java.io.FileOutputStream
 import java.io.FilterInputStream
@@ -49,7 +50,10 @@ object VoskModel {
     fun startDownload(c: Context) {
         val app = c.applicationContext
         if (isReady(app) || job?.isActive == true) return
-        job = scope.launch { download(app) }
+        job = scope.launch {
+            download(app)
+            if (isReady(app) && app.container.settings.current().wakeEnabled) AssistantControl.startListening(app)
+        }
     }
 
     /** Удаляет модель и скачивает заново (если она повредилась). */
