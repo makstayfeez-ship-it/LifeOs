@@ -22,7 +22,10 @@ import kotlinx.coroutines.launch
  */
 object LocalModel {
     private const val FILE = "Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm"
-    private const val EXPECTED_BYTES = 1_597_931_520L
+    /** Примерный размер файла (около 1,6 ГБ): точная проверка идёт по размеру, который назвал сервер при скачивании. */
+    private const val APPROX_BYTES = 1_590_000_000L
+    private const val MIN_BYTES = 1_400_000_000L
+    private const val MAX_BYTES = 1_900_000_000L
     private val URLS = listOf(
         "https://github.com/makstayfeez-ship-it/LifeOs/releases/download/llm-model-qwen/$FILE",
         "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/$FILE",
@@ -40,7 +43,7 @@ object LocalModel {
     private fun model(c: Context) = File(dir(c), FILE)
     private fun part(c: Context) = File(dir(c), "$FILE.part")
 
-    fun isReady(c: Context): Boolean = model(c).let { it.exists() && it.length() == EXPECTED_BYTES }
+    fun isReady(c: Context): Boolean = model(c).let { it.exists() && it.length() in MIN_BYTES..MAX_BYTES }
 
     fun startDownload(c: Context) {
         val app = c.applicationContext
@@ -62,7 +65,7 @@ object LocalModel {
     }
 
     private fun download(app: Context) {
-        if (dir(app).usableSpace < EXPECTED_BYTES + 400_000_000L) {
+        if (dir(app).usableSpace < APPROX_BYTES + 400_000_000L) {
             _state.value = State(error = "Не хватает места: нужно примерно 2 ГБ свободной памяти")
             return
         }
@@ -84,8 +87,9 @@ object LocalModel {
 
     private fun downloadFrom(app: Context, url: String) {
         val tmp = part(app)
+        var expectedTotal = -1L
         var have = if (tmp.exists()) tmp.length() else 0L
-        if (have >= EXPECTED_BYTES) { tmp.delete(); have = 0 }
+        if (have >= MAX_BYTES) { tmp.delete(); have = 0 }
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 20_000
             readTimeout = 30_000
@@ -97,8 +101,16 @@ object LocalModel {
             if (code !in 200..299) error("ответ сервера $code")
             val resumed = code == 206
             if (!resumed) have = 0
+            // Полный размер файла: из Content-Range при докачке или из Content-Length
+            val total: Long = if (resumed) {
+                conn.getHeaderField("Content-Range")?.substringAfter('/')?.trim()?.toLongOrNull() ?: -1L
+            } else {
+                conn.contentLengthLong
+            }
+            val expected = if (total > 0) total else APPROX_BYTES
             var read = have
             var shown = -1
+            expectedTotal = total
             conn.inputStream.use { input ->
                 FileOutputStream(tmp, resumed).use { out ->
                     val buf = ByteArray(256 * 1024)
@@ -107,7 +119,7 @@ object LocalModel {
                         if (n < 0) break
                         out.write(buf, 0, n)
                         read += n
-                        val p = (read * 100 / EXPECTED_BYTES).toInt().coerceIn(0, 99)
+                        val p = (read * 100 / expected).toInt().coerceIn(0, 99)
                         if (p != shown) {
                             shown = p
                             _state.value = State(downloading = true, percent = p, megabytes = (read / 1_000_000).toInt())
@@ -118,10 +130,10 @@ object LocalModel {
         } finally {
             conn.disconnect()
         }
-        if (tmp.length() != EXPECTED_BYTES) {
-            val got = tmp.length()
-            if (got > EXPECTED_BYTES) tmp.delete()
-            error("файл неполный ($got из $EXPECTED_BYTES байт)")
+        val got = tmp.length()
+        if ((expectedTotal > 0 && got != expectedTotal) || got !in MIN_BYTES..MAX_BYTES) {
+            if (got > MAX_BYTES || (expectedTotal > 0 && got > expectedTotal)) tmp.delete()
+            error("файл неполный ($got байт)")
         }
         val target = model(app)
         target.delete()
