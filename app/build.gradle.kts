@@ -87,3 +87,18 @@ dependencies {
     // ИИ в телефоне (LiteRT-LM от Google) вынесен в отдельный модуль: библиотека собрана более новым Kotlin, чем остальное приложение
     implementation(project(":llm"))
 }
+
+// Модуль :llm тянет библиотеку, собранную Kotlin 2.4, а наш компилятор (2.0.21) читает метаданные только до 2.1.
+// Для этапов компиляции и KSP возвращаем старые версии библиотек Kotlin; в самом приложении (runtime) остаются новые.
+configurations.configureEach {
+    val name = name.lowercase()
+    if (name.contains("compileclasspath") || name.startsWith("ksp")) {
+        resolutionStrategy.eachDependency {
+            when {
+                requested.group == "org.jetbrains.kotlin" && requested.name.startsWith("kotlin-stdlib") -> useVersion(libs.versions.kotlin.get())
+                requested.group == "org.jetbrains.kotlin" && requested.name == "kotlin-reflect" -> useVersion(libs.versions.kotlin.get())
+                requested.group == "org.jetbrains.kotlinx" && requested.name.startsWith("kotlinx-coroutines") -> useVersion(libs.versions.coroutines.get())
+            }
+        }
+    }
+}
