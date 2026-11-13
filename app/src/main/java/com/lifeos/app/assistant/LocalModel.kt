@@ -1,12 +1,7 @@
 package com.lifeos.app.assistant
 
 import android.content.Context
-import com.google.ai.edge.litertlm.Backend
-import com.google.ai.edge.litertlm.ConversationConfig
-import com.google.ai.edge.litertlm.Contents
-import com.google.ai.edge.litertlm.Engine
-import com.google.ai.edge.litertlm.EngineConfig
-import com.google.ai.edge.litertlm.SamplerConfig
+import com.lifeos.llm.LlmRunner
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
@@ -136,7 +131,7 @@ object LocalModel {
 
 /** Запуск модели в телефоне. Загруженная в память модель занимает около 2 ГБ, поэтому через 3 минуты простоя выгружается. */
 object LocalLlm {
-    private var engine: Engine? = null
+    private var engine: LlmRunner? = null
     private var lastUse = 0L
     private var idleJob: Job? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -147,16 +142,10 @@ object LocalLlm {
         val app = c.applicationContext
         if (!LocalModel.isReady(app)) return null
         return try {
-            val e = engine ?: Engine(
-                EngineConfig(
-                    modelPath = File(File(app.filesDir, "llm"), "Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm").absolutePath,
-                    backend = Backend.CPU(),
-                    cacheDir = app.cacheDir.path,
-                ),
-            ).also {
-                it.initialize()
-                engine = it
-            }
+            val e = engine ?: LlmRunner(
+                File(File(app.filesDir, "llm"), "Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm").absolutePath,
+                app.cacheDir.path,
+            ).also { engine = it }
             val prompt = buildString {
                 history.takeLast(6).forEach { (role, text) ->
                     append(if (role == "user") "Пользователь: " else "Помощник: ").append(text.take(400)).append('\n')
@@ -164,11 +153,7 @@ object LocalLlm {
                 if (isNotEmpty()) append("\nНовое сообщение пользователя: ")
                 append(userText)
             }
-            val config = ConversationConfig(
-                systemInstruction = Contents.of(system),
-                samplerConfig = SamplerConfig(topK = 40, topP = 0.9, temperature = 0.6),
-            )
-            val reply = e.createConversation(config).use { it.sendMessage(prompt).toString() }.trim()
+            val reply = e.ask(system, prompt).trim()
             lastUse = System.currentTimeMillis()
             scheduleRelease()
             reply.ifBlank { null }
