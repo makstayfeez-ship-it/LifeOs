@@ -73,6 +73,10 @@ class MainActivity : FragmentActivity() {
                     com.lifeos.app.assistant.VoskModel.startDownload(this@MainActivity)
                 }
                 if (s.morningEnabled) BriefScheduler.schedule(this@MainActivity, s.morningHour, s.morningMinute)
+                // Обзор ещё не показан, а «слушателя» экрана выгрузило: возвращаем его (из открытого приложения это разрешено)
+                if (s.morningEnabled && s.briefOnLock && com.lifeos.app.brief.MorningState.shouldShow(this@MainActivity)) {
+                    com.lifeos.app.brief.MorningWatchService.start(this@MainActivity)
+                }
                 com.lifeos.app.reminder.ReminderScheduler.rescheduleAll(this@MainActivity)
             }
         }

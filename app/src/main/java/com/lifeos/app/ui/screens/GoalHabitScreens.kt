@@ -60,6 +60,7 @@ import com.lifeos.app.ui.components.FormDialog
 import com.lifeos.app.ui.components.InfoCard
 import com.lifeos.app.ui.components.LabelPill
 import com.lifeos.app.ui.components.LifeChip
+import com.lifeos.app.ui.components.HoldEmojiPicker
 import com.lifeos.app.ui.components.LifeField
 import com.lifeos.app.ui.components.LifeScreen
 import com.lifeos.app.ui.components.PillButton
@@ -121,7 +122,12 @@ fun Confetti(trigger: Int, modifier: Modifier = Modifier) {
 
 // ---------------------------------------------------------------- Привычки
 
-private val HabitEmojis = listOf("💪", "🏃", "📚", "💧", "🧘", "😴", "🥗", "✍️", "🎸", "🚭", "🧹", "🦷")
+private val HabitEmojis = listOf(
+    "💪", "🏃", "📚", "💧", "🧘", "😴",
+    "🥗", "✍️", "🎸", "🚭", "🧹", "🦷",
+    "🚴", "🏊", "🍎", "🧠", "🙏", "🎨",
+    "🧘‍♀️", "☀️", "🐕", "💊", "📵", "🌱",
+)
 private val HabitDurations = listOf("Неделя" to 7, "Месяц" to 30, "3 месяца" to 90, "Год" to 365, "Без срока" to 0)
 private val Cheers = listOf("Отлично!", "Так держать!", "Ещё один шаг к цели!", "Огонь!", "Вы молодец!", "Сегодня зачёт!")
 
@@ -287,9 +293,7 @@ fun HabitsScreen(vm: AppViewModel, onBack: () -> Unit) {
             dialog = false
         }, confirmEnabled = title.isNotBlank()) {
             LifeField(title, { title = it }, "Например: отжимания")
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                HabitEmojis.forEach { e -> LifeChip(e, emoji == e, { emoji = e }) }
-            }
+            HoldEmojiPicker(emoji, HabitEmojis, { emoji = it })
             Text("Сколько раз в неделю", color = GrayText, style = MaterialTheme.typography.bodySmall)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 (1..7).forEach { n -> LifeChip("$n", perWeek == n, { perWeek = n }) }
@@ -306,7 +310,11 @@ private fun durationName(days: Int): String = HabitDurations.firstOrNull { it.se
 
 // ---------------------------------------------------------------- Цели на год
 
-private val GoalEmojis = listOf("🎯", "💰", "🚗", "🏠", "✈️", "📚", "💪", "🎓", "💼", "❤️")
+private val GoalEmojis = listOf(
+    "🎯", "💰", "🚗", "🏠", "✈️", "📚",
+    "💪", "🎓", "💼", "❤️", "🏆", "🌍",
+    "👶", "💍", "🎸", "🏔️", "🐶", "🛠️",
+)
 private val GoalUnits = listOf("₽", "км", "раз", "кг", "книг", "")
 
 private fun fmtAmount(v: Double): String =
@@ -422,9 +430,7 @@ fun GoalsScreen(vm: AppViewModel, onBack: () -> Unit) {
             },
         ) {
             LifeField(title, { title = it }, "Например: накопить миллион")
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                GoalEmojis.forEach { e -> LifeChip(e, emoji == e, { emoji = e }) }
-            }
+            HoldEmojiPicker(emoji, GoalEmojis, { emoji = it })
             LifeField(target, { target = it.filter { c -> c.isDigit() || c == '.' }.take(12) }, "Сколько нужно (необязательно)", keyboardType = KeyboardType.Decimal)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 GoalUnits.forEach { u -> LifeChip(u.ifBlank { "без ед." }, unit == u, { unit = u }) }

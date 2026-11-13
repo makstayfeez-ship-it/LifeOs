@@ -1,11 +1,25 @@
 package com.lifeos.app.brief
 
 import android.app.KeyguardManager
+import android.app.PendingIntent
+import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
 import android.provider.Settings
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import com.lifeos.app.LifeApp
+import com.lifeos.app.R
+import com.lifeos.app.ui.MainActivity
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -57,25 +71,81 @@ import java.time.LocalDateTime
 import java.time.format.TextStyle
 import java.util.Calendar
 import java.util.Locale
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Запоминает, что утренний обзор готов и ещё не показан на экране блокировки. */
 object MorningState {
     private fun prefs(c: Context) = c.getSharedPreferences("morning_state", Context.MODE_PRIVATE)
 
-    fun markPending(c: Context) {
-        prefs(c).edit().putLong("pending", LocalDate.now().toEpochDay()).apply()
+    /**
+     * Обзор готов и ждёт, пока вы включите экран. Обычно ждёт до двух часов дня (но не меньше четырёх часов после сигнала).
+     * [forMillis] задаёт срок вручную (для проверки), [resetShown] разрешает показать его ещё раз сегодня.
+     */
+    fun markPending(c: Context, forMillis: Long? = null, resetShown: Boolean = false) {
+        val now = System.currentTimeMillis()
+        val until = forMillis?.let { now + it } ?: run {
+            val noon = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 14)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            maxOf(noon, now + 4 * 3_600_000L)
+        }
+        prefs(c).edit().apply {
+            putLong("until", until)
+            if (resetShown) remove("shown")
+        }.apply()
     }
 
     fun markShown(c: Context) {
-        prefs(c).edit().putLong("shown", LocalDate.now().toEpochDay()).apply()
+        prefs(c).edit().putLong("shown", LocalDate.now().toEpochDay()).remove("until").apply()
     }
 
-    /** Показываем один раз в день, с момента утреннего сигнала и до двух часов дня. */
+    /** Показываем один раз в день: с утреннего сигнала и пока обзор не истёк. */
     fun shouldShow(c: Context): Boolean {
-        val today = LocalDate.now().toEpochDay()
         val p = prefs(c)
-        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-        return p.getLong("pending", -1) == today && p.getLong("shown", -1) != today && hour < 14
+        return p.getLong("until", 0) > System.currentTimeMillis() && p.getLong("shown", -1) != LocalDate.now().toEpochDay()
+    }
+}
+
+/** Поднимает утренний обзор над экраном блокировки всеми способами, какие разрешает Android. */
+object MorningLauncher {
+    const val FSI_ID = 2003
+
+    fun show(app: Context) {
+        val intent = Intent(app, MorningLockActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        // 1) Полноэкранное уведомление: Android само открывает окно, пока экран выключен или заблокирован
+        runCatching { postFullScreen(app, intent) }
+        // 2) Прямой запуск, если выдано «Поверх других приложений»
+        if (Settings.canDrawOverlays(app)) runCatching { app.startActivity(intent) }
+    }
+
+    private fun postFullScreen(app: Context, intent: Intent) {
+        val pi = PendingIntent.getActivity(
+            app,
+            31,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val n = NotificationCompat.Builder(app, LifeApp.CHANNEL_BRIEF_LOCK)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Утренний обзор готов")
+            .setContentText("Нажмите, чтобы посмотреть день")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setFullScreenIntent(pi, true)
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .setTimeoutAfter(10 * 60_000L)
+            .build()
+        NotificationManagerCompat.from(app).notify(FSI_ID, n)
+    }
+
+    fun cancelNotification(app: Context) {
+        runCatching { NotificationManagerCompat.from(app).cancel(FSI_ID) }
     }
 }
 
@@ -85,10 +155,82 @@ class ScreenOnReceiver : BroadcastReceiver() {
         if (intent.action != Intent.ACTION_SCREEN_ON) return
         val app = context.applicationContext
         if (!MorningState.shouldShow(app)) return
-        // Запуск окна из фона разрешён, когда выдано «Поверх других приложений»
-        if (!Settings.canDrawOverlays(app)) return
-        runCatching {
-            app.startActivity(Intent(app, MorningLockActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        MorningLauncher.show(app)
+    }
+}
+
+/**
+ * Пока обзор ждёт показа, эта служба слушает включение экрана. Обычный приёмник в приложении для этого не годится:
+ * Android выгружает приложение из памяти, и утром слушать уже некому. Служба живёт только от утреннего сигнала до показа обзора.
+ */
+class MorningWatchService : Service() {
+    private var receiver: BroadcastReceiver? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private val expire = object : Runnable {
+        override fun run() {
+            if (!MorningState.shouldShow(this@MorningWatchService)) stopSelf() else handler.postDelayed(this, 10 * 60_000L)
+        }
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val started = runCatching {
+            val n = notification()
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else {
+                startForeground(NOTIF_ID, n)
+            }
+        }.isSuccess
+        if (!started || !MorningState.shouldShow(this)) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (receiver == null) {
+            val r = ScreenOnReceiver()
+            ContextCompat.registerReceiver(this, r, IntentFilter(Intent.ACTION_SCREEN_ON), ContextCompat.RECEIVER_NOT_EXPORTED)
+            receiver = r
+        }
+        handler.removeCallbacks(expire)
+        handler.postDelayed(expire, 10 * 60_000L)
+        return START_STICKY
+    }
+
+    override fun onDestroy() {
+        handler.removeCallbacks(expire)
+        receiver?.let { runCatching { unregisterReceiver(it) } }
+        receiver = null
+        super.onDestroy()
+    }
+
+    private fun notification(): android.app.Notification {
+        val open = PendingIntent.getActivity(
+            this,
+            32,
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(MainActivity.EXTRA_ROUTE, "morning"),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        return NotificationCompat.Builder(this, LifeApp.CHANNEL_ASSISTANT)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Утренний обзор ждёт вас")
+            .setContentText("Появится, когда вы включите экран телефона")
+            .setContentIntent(open)
+            .setOngoing(true)
+            .setSilent(true)
+            .build()
+    }
+
+    companion object {
+        private const val NOTIF_ID = 2004
+
+        fun start(context: Context) {
+            runCatching { ContextCompat.startForegroundService(context, Intent(context, MorningWatchService::class.java)) }
+        }
+
+        fun stop(context: Context) {
+            runCatching { context.stopService(Intent(context, MorningWatchService::class.java)) }
         }
     }
 }
@@ -99,6 +241,7 @@ class MorningLockActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setShowWhenLocked(true)
         setTurnScreenOn(true)
+        MorningLauncher.cancelNotification(this)
         val locked = getSystemService(KeyguardManager::class.java).isKeyguardLocked
 
         setContent {
@@ -107,7 +250,11 @@ class MorningLockActivity : ComponentActivity() {
             LaunchedEffect(Unit) {
                 val s = container.settings.current()
                 val name = container.auth.user.value?.name.orEmpty()
-                brief = container.brief.build(name, s)
+                // Сначала дела и привычки (из памяти телефона, мгновенно), потом добавляем погоду, если интернет ответил
+                brief = container.brief.build(name, s.copy(briefWeather = false))
+                if (s.briefWeather) {
+                    withTimeoutOrNull(6_000) { runCatching { container.brief.build(name, s) }.getOrNull() }?.let { brief = it }
+                }
             }
             LifeTheme(settings.accent, settings.glow) {
                 MorningLockContent(
@@ -115,13 +262,19 @@ class MorningLockActivity : ComponentActivity() {
                     settings = settings,
                     // Пока телефон заблокирован, личные данные скрываем, если так выбрано в «Безопасности»
                     hidePrivate = locked && settings.hideLockNotifs,
-                    onDone = {
-                        MorningState.markShown(this@MorningLockActivity)
-                        finish()
-                    },
+                    onDone = { finish() },
                 )
             }
         }
+    }
+
+    override fun onDestroy() {
+        // Закрыли обзор (кнопкой или назад): на сегодня он показан, ждать включения экрана больше не нужно
+        if (isFinishing) {
+            MorningState.markShown(this)
+            MorningWatchService.stop(this)
+        }
+        super.onDestroy()
     }
 }
 

@@ -130,21 +130,43 @@ fun MorningSettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
     val exactOk = remember(tick) { Perms.canExactAlarms(context) }
     var city by remember(s.city) { mutableStateOf(s.city) }
     var cityMessage by remember { mutableStateOf<String?>(null) }
+    var testStarted by remember { mutableStateOf(false) }
 
     LifeScreen("Настройки обзора", onBack = onBack) {
         SwitchRow(
             "Показывать на экране блокировки",
             s.briefOnLock,
             { on -> vm.update { it.copy(briefOnLock = on) } },
-            subtitle = "Когда вы утром включите телефон, появится красивый обзор: погода, дела, привычки, цель. " +
-                "Нужно разрешение «Поверх других приложений», и лучше включить прослушивание помощника, чтобы система не выгружала LifeOS.",
+            subtitle = "Когда вы утром включите экран телефона, обзор появится сразу поверх блокировки: погода, дела, привычки, цель. " +
+                "Нажмёте «Начать день», и откроется обычный экран телефона. Ниже список того, что должно быть разрешено.",
         )
+        if (s.briefOnLock) LockScreenChecklist(context, tick)
         PillButton(
             "Показать, как это выглядит",
             { context.startActivity(android.content.Intent(context, com.lifeos.app.brief.MorningLockActivity::class.java)) },
-            Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            Modifier.fillMaxWidth().padding(top = 8.dp),
             outlined = true,
         )
+        PillButton(
+            "Проверить на блокировке",
+            {
+                // Обзор «готов», осталось выключить и включить экран: так же будет и утром
+                com.lifeos.app.brief.MorningState.markPending(context, forMillis = 30 * 60_000L, resetShown = true)
+                com.lifeos.app.brief.MorningWatchService.start(context)
+                testStarted = true
+            },
+            Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
+            outlined = true,
+        )
+        if (testStarted) {
+            Text(
+                "Готово. Теперь нажмите кнопку питания, чтобы экран погас, подождите пару секунд и включите его снова: " +
+                    "обзор должен появиться поверх блокировки. Если нет, выполните пункты из списка выше.",
+                color = LocalAccent.current,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+        }
         SwitchRow(
             "Показывать каждое утро",
             s.morningEnabled,
@@ -208,5 +230,55 @@ fun MorningSettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
             { on -> vm.update { it.copy(speakBrief = on) } },
             subtitle = "Голосом помощника, когда приходит уведомление.",
         )
+    }
+}
+
+
+/** Что должно быть включено, чтобы утренний обзор вылезал поверх экрана блокировки, и кнопки для каждого пункта. */
+@Composable
+private fun LockScreenChecklist(context: android.content.Context, tick: Int) {
+    val overlayOk = remember(tick) { Perms.canOverlay(context) }
+    val fullOk = remember(tick) { Perms.canFullScreenIntent(context) }
+    val notifOk = remember(tick) { androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled() }
+    val xiaomi = remember { android.os.Build.MANUFACTURER.lowercase() in setOf("xiaomi", "redmi", "poco") }
+    val accent = LocalAccent.current
+
+    InfoCard(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Text("Чтобы обзор появлялся на блокировке", color = Snow, style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Android сам решает, можно ли приложению включать экран. Для этого должны стоять все пункты ниже.",
+            color = GrayText,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+        )
+        LockRow("Уведомления разрешены", notifOk) { context.startActivity(Perms.appDetailsSettings(context)) }
+        LockRow("Поверх других приложений", overlayOk) { context.startActivity(Perms.overlaySettings(context)) }
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            LockRow("Полноэкранные уведомления", fullOk) { context.startActivity(Perms.fullScreenIntentSettings(context)) }
+        }
+        LockRow("Без ограничений батареи (откройте и выберите «Не ограничивать»)", null) { context.startActivity(Perms.batterySettings()) }
+        if (xiaomi) {
+            Text(
+                "Xiaomi, Redmi, POCO: откройте Настройки → Приложения → LifeOS → Другие разрешения и включите " +
+                    "«Показывать на заблокированном экране» и «Всплывающие окна, когда приложение в фоне».",
+                color = accent,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+            PillButton(
+                "Открыть сведения о приложении",
+                { context.startActivity(Perms.appDetailsSettings(context)) },
+                Modifier.fillMaxWidth().padding(top = 6.dp),
+                outlined = true,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LockRow(title: String, ok: Boolean?, onOpen: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, color = Snow, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = 8.dp))
+        if (ok == true) com.lifeos.app.ui.components.LabelPill("включено") else PillButton("Открыть", onOpen)
     }
 }

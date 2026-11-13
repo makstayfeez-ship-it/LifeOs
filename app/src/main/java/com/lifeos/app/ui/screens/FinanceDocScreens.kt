@@ -127,13 +127,11 @@ fun FinanceScreen(vm: AppViewModel, onBack: () -> Unit) {
             if (!listenerOn) {
                 PillButton(
                     "Разрешить доступ к уведомлениям",
-                    {
-                        context.startActivity(
-                            android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
-                        )
-                    },
+                    { context.startActivity(com.lifeos.app.ui.Perms.notificationListenerSettings()) },
                     Modifier.fillMaxWidth(),
+                )
+                com.lifeos.app.ui.components.RestrictedSettingsHelp(
+                    "Если Android пишет «Настройки с ограниченным доступом» или переключатель не включается",
                 )
             } else {
                 SwitchRow("Считать автоматически", settings.autoFinance, { on -> vm.update { it.copy(autoFinance = on) } })

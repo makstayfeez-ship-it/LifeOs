@@ -52,6 +52,29 @@ object Perms {
         Uri.parse("package:${context.packageName}"),
     ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
+    /** Сведения о приложении: там в меню ⋮ включается «Разрешить ограниченные настройки». */
+    fun appDetailsSettings(context: Context) = Intent(
+        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        Uri.parse("package:${context.packageName}"),
+    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    fun notificationListenerSettings() =
+        Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    /** Разрешено ли показывать окно на весь экран поверх блокировки (Android 14+ спрашивает это отдельно). */
+    fun canFullScreenIntent(context: Context): Boolean =
+        Build.VERSION.SDK_INT < 34 ||
+            context.getSystemService(android.app.NotificationManager::class.java).canUseFullScreenIntent()
+
+    fun fullScreenIntentSettings(context: Context): Intent =
+        if (Build.VERSION.SDK_INT >= 34) {
+            Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:${context.packageName}"))
+        } else {
+            appDetailsSettings(context)
+        }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    fun batterySettings() = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
     fun accessibilitySettings() = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     fun exactAlarmSettings(context: Context): Intent =

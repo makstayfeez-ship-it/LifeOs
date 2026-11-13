@@ -62,6 +62,7 @@ import com.lifeos.app.ui.components.InfoCard
 import com.lifeos.app.ui.components.LabelPill
 import com.lifeos.app.ui.components.LifeChip
 import com.lifeos.app.ui.components.LifeField
+import com.lifeos.app.ui.components.TimeField
 import com.lifeos.app.ui.components.LifeScreen
 import com.lifeos.app.ui.components.OutlineCard
 import com.lifeos.app.ui.components.PillButton
@@ -142,24 +143,23 @@ fun CalendarScreen(vm: AppViewModel, onBack: () -> Unit) {
 
     if (dialog) {
         var title by remember { mutableStateOf("") }
-        var time by remember { mutableStateOf("") }
+        var time by remember { mutableStateOf<Int?>(null) }
         var isEvent by remember { mutableStateOf(false) }
-        val parsed = Fmt.parseTime(time)
         FormDialog(
             title = "Новое на ${Fmt.dayMonth(selected)}",
             onDismiss = { dialog = false },
             onConfirm = {
-                vm.addTask(title.trim(), selected.toEpochDay(), parsed, isEvent)
+                vm.addTask(title.trim(), selected.toEpochDay(), time, isEvent)
                 dialog = false
             },
-            confirmEnabled = title.isNotBlank() && (time.isBlank() || parsed != null),
+            confirmEnabled = title.isNotBlank(),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 LifeChip("Задача", !isEvent, { isEvent = false })
                 LifeChip("Событие", isEvent, { isEvent = true })
             }
             LifeField(title, { title = it }, "Название")
-            LifeField(time, { time = it }, "Время, например 14:30 (необязательно)", keyboardType = KeyboardType.Number)
+            TimeField(time, { time = it }, "Время: нажмите, чтобы выбрать (необязательно)")
         }
     }
 }

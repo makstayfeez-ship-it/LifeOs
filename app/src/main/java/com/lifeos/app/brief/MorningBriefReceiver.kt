@@ -72,11 +72,18 @@ class MorningBriefReceiver : BroadcastReceiver() {
                 // Следующий запуск ставим сразу, чтобы сбой в сборке сводки не оборвал расписание
                 BriefScheduler.schedule(app, s.morningHour, s.morningMinute)
 
+                // Сначала отмечаем, что обзор готов, и запускаем «слушателя» экрана: дальше всё работает, даже если сводка не соберётся
+                if (s.briefOnLock) {
+                    MorningState.markPending(app, resetShown = true)
+                    MorningWatchService.start(app)
+                }
+
                 val name = c.auth.user.value?.name.orEmpty()
-                val brief = withTimeoutOrNull(8_000) { c.brief.build(name, s) } ?: return@launch
+                // Если погода не успела загрузиться, показываем обзор без неё, чем остаться вовсе без уведомления
+                val brief = withTimeoutOrNull(6_000) { c.brief.build(name, s) }
+                    ?: runCatching { c.brief.build(name, s.copy(briefWeather = false)) }.getOrNull()
+                    ?: return@launch
                 notify(app, brief, s.hideLockNotifs)
-                // Красивый обзор покажется на экране, когда вы включите телефон
-                if (s.briefOnLock) MorningState.markPending(app)
                 if (s.speakBrief) c.tts.speak(brief.spoken(), s)
             } finally {
                 pending.finish()
@@ -128,6 +135,8 @@ class BootReceiver : BroadcastReceiver() {
             try {
                 val s = app.container.settings.current()
                 if (s.morningEnabled) BriefScheduler.schedule(app, s.morningHour, s.morningMinute)
+                // После перезагрузки обзор мог остаться непоказанным: снова ждём включения экрана
+                if (s.morningEnabled && s.briefOnLock && MorningState.shouldShow(app)) MorningWatchService.start(app)
                 com.lifeos.app.reminder.ReminderScheduler.rescheduleAll(app)
                 // Android не даёт запускать микрофон сам после перезагрузки: просим одно касание, чтобы помощник снова слушал
                 if (s.wakeEnabled && intent.action == Intent.ACTION_BOOT_COMPLETED) {

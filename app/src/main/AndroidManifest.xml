@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
@@ -81,6 +83,7 @@
             android:name=".brief.MorningLockActivity"
             android:exported="false"
             android:excludeFromRecents="true"
+            android:launchMode="singleTask"
             android:showWhenLocked="true"
             android:taskAffinity=""
             android:theme="@style/Theme.LifeOS"
@@ -130,6 +133,16 @@
             android:name=".assistant.LifeVoiceSessionService"
             android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
+
+        <!-- Ждёт включения экрана, чтобы показать утренний обзор поверх блокировки (живёт от утреннего сигнала до показа) -->
+        <service
+            android:name=".brief.MorningWatchService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Утренний обзор: ждёт включения экрана, чтобы показать сводку дня" />
+        </service>
 
         <!-- Слушает «LifeOS…» в фоне и показывает робота поверх экрана -->
         <service
