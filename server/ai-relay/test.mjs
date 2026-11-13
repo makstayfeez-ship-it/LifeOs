@@ -103,3 +103,25 @@ assert.equal((await askK(tk)).status, 200);
 assert.equal((await askK(tk)).status, 429);
 assert.equal(store.size, 1);
 console.log("OK firebase");
+
+// ---------- запасной платный ключ ----------
+const calls = [];
+globalThis.fetch = async (url, init) => {
+  calls.push({ url: String(url), init });
+  if (String(url).includes("groq")) return new Response("{}", { status: 429 });
+  return new Response(JSON.stringify({ type: "message", role: "assistant", content: [{ type: "text", text: "платный ответ" }], stop_reason: "end_turn" }), { status: 200 });
+};
+const envF = { UPSTREAM_KEY: "gsk", FALLBACK_KEY: "sk-ant-x", FALLBACK_DAILY_LIMIT: "2" };
+const askF = (e) => worker.fetch(new Request("https://r.example/v1/messages", { method: "POST", headers: { "x-device-id": "f" + Math.random() }, body: JSON.stringify({ max_tokens: 5000, messages: [{ role: "user", content: "привет" }] }) }), e);
+let rf = await askF(envF);
+assert.equal(rf.status, 200);
+assert.equal((await rf.json()).content[0].text, "платный ответ");
+const paid = calls.find((c) => c.url.includes("anthropic"));
+assert.equal(paid.init.headers["x-api-key"], "sk-ant-x");
+const sent = JSON.parse(paid.init.body);
+assert.equal(sent.model, "claude-haiku-5-5");
+assert.equal(sent.max_tokens, 1500, "потолок токенов");
+assert.equal((await askF(envF)).status, 200);
+assert.equal((await askF(envF)).status, 429, "потолок платных запросов в сутки");
+assert.equal((await askF({ UPSTREAM_KEY: "gsk" })).status, 429, "без запасного ключа отказ остаётся отказом");
+console.log("OK fallback");

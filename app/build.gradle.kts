@@ -84,4 +84,6 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
+    // ИИ в телефоне (LiteRT-LM от Google): запасной режим без интернета и без лимитов
+    implementation("com.google.ai.edge.litertlm:litertlm-android:latest.release")
 }

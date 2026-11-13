@@ -462,6 +462,41 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () ->
             outlined = true,
         )
 
+        SectionTitle("ИИ в телефоне (без интернета и без лимитов)")
+        val llm by com.lifeos.app.assistant.LocalModel.state.collectAsState()
+        val llmReady = remember(llm) { com.lifeos.app.assistant.LocalModel.isReady(context) }
+        Text(
+            "Маленькая модель прямо в телефоне (Qwen 2.5, открытая лицензия). Не тратит лимит, работает без интернета и ничего не отправляет на сервер. " +
+                "Но она заметно слабее облачного ИИ: хуже понимает сложное, может ошибаться и не выполняет действия на телефоне (будильники, заметки и напоминания " +
+                "делают обычные команды). Нужно около 2 ГБ места и телефон с 6 ГБ памяти или больше; ответы идут медленнее, телефон может греться. " +
+                "Включается сама, когда облачный ИИ недоступен или лимит кончился.",
+            color = GrayText,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        when {
+            llmReady -> {
+                Text("✓ Модель скачана", color = Color(0xFF4CD964), modifier = Modifier.padding(bottom = 4.dp))
+                SwitchRow(
+                    "Всегда отвечать моделью из телефона",
+                    s.localAiAlways,
+                    { on -> vm.update { it.copy(localAiAlways = on) } },
+                    subtitle = "Без интернета и без лимитов, но качество ниже облачного",
+                )
+                PillButton("Удалить модель", { com.lifeos.app.assistant.LocalModel.delete(context) }, outlined = true)
+            }
+            llm.downloading -> {
+                Text("Скачивание: ${llm.percent}% (${llm.megabytes} из 1600 МБ). Можно закрыть приложение, скачивание продолжится, пока оно в памяти.", color = Snow, style = MaterialTheme.typography.bodyMedium)
+                PillButton("Отменить", { com.lifeos.app.assistant.LocalModel.cancelDownload() }, Modifier.padding(top = 8.dp), outlined = true)
+            }
+            else -> {
+                if (llm.error.isNotBlank()) {
+                    Text(llm.error, color = Color(0xFFFF6B6B), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
+                }
+                PillButton("Скачать (1,6 ГБ, лучше по Wi‑Fi)", { com.lifeos.app.assistant.LocalModel.startDownload(context) })
+            }
+        }
+
         SectionTitle("Что помощник помнит о вас")
         val facts = s.memory.lines().filter { it.isNotBlank() }
         Text(

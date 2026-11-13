@@ -93,6 +93,24 @@ jobs:
               --target "$sha" --latest=false
           fi
 
+      # ИИ-модель для телефона (1,6 ГБ, Qwen 2.5, Apache 2.0): один раз зеркалим на Releases, оттуда её скачивает приложение
+      - name: Mirror on-device AI model to Releases (once)
+        if: ${{ hashFiles('ci/fake-firebase') == '' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view llm-model-qwen > /dev/null 2>&1; then
+            f=Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm
+            curl -fL --retry 3 -o "$f" "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/$f"
+            test "$(stat -c %s "$f")" = "1597931520"
+            sha="${{ github.event.pull_request.head.sha || github.sha }}"
+            gh release create llm-model-qwen "$f" \
+              --title "ИИ-модель для телефона (Qwen 2.5 1.5B)" \
+              --notes "Открытая модель Qwen 2.5 (лицензия Apache 2.0) в формате LiteRT-LM для запасного ИИ без интернета. Приложение скачивает её само." \
+              --target "$sha" --latest=false
+          fi
+
       # Готовый APK кладём на страницу Releases: его скачивают одним нажатием, без архива
       - name: Publish APK to Releases
         if: ${{ hashFiles('ci/fake-firebase') == '' }}

@@ -29,6 +29,9 @@ class AiAgent(private val context: Context, private val executor: CommandExecuto
     /** Куда отправлять запросы: свой ключ Anthropic или бесплатный сервер LifeOS (ключ тогда не нужен). */
     private class Endpoint(val url: String, val headers: Map<String, String>, val relay: Boolean)
 
+    /** Облачный ИИ сейчас недоступен (лимит, сервер, сеть): можно ответить моделью из телефона. */
+    private class AiUnavailable(message: String) : Exception(message)
+
     private suspend fun endpoint(s: AppSettings): Endpoint? {
         if (s.apiKey.isNotBlank()) {
             return Endpoint(API_URL, mapOf("x-api-key" to s.apiKey, "anthropic-version" to "2023-06-01"), relay = false)
@@ -57,14 +60,36 @@ class AiAgent(private val context: Context, private val executor: CommandExecuto
     }
 
     suspend fun ask(s: AppSettings, history: List<Pair<String, String>>, userText: String): String {
+        val localReady = LocalModel.isReady(context)
+        if (localReady && s.localAiAlways) {
+            localAnswer(s, history, userText)?.let { return it }
+        }
         val ep = endpoint(s)
-            ?: return "Чтобы я мог думать и делать всё по просьбе, нужен ИИ: в настройках помощника вставьте ключ или адрес сервера ИИ. " +
-                "Будильник, таймер, заметки, напоминания, покупки, расходы и простой счёт работают и без него."
+        if (ep == null) {
+            if (localReady) localAnswer(s, history, userText)?.let { return it }
+            return "Чтобы я мог думать и делать всё по просьбе, нужен ИИ: в настройках помощника вставьте ключ или адрес сервера ИИ, " +
+                "либо скачайте ИИ в телефон. Будильник, таймер, заметки, напоминания, покупки, расходы и простой счёт работают и без него."
+        }
         return withContext(Dispatchers.IO) {
-            runCatching { loop(ep, s, history, userText) }
-                .getOrElse { "Не получилось связаться с ИИ. Проверь интернет." }
+            try {
+                loop(ep, s, history, userText)
+            } catch (e: Exception) {
+                // Облако недоступно: отвечаем моделью из телефона, если она скачана
+                val local = if (localReady) localAnswer(s, history, userText) else null
+                local ?: if (e is AiUnavailable) e.message.orEmpty() else "Не получилось связаться с ИИ. Проверь интернет."
+            }
         }
     }
+
+    private suspend fun localAnswer(s: AppSettings, history: List<Pair<String, String>>, userText: String): String? =
+        withContext(Dispatchers.Default) {
+            val facts = s.memory.lines().filter { it.isNotBlank() }.joinToString("; ")
+            val system = "Ты голосовой помощник LifeOS в телефоне. Отвечай по-русски, коротко и по делу, одним-тремя предложениями, без списков и разметки. " +
+                "Сейчас ты работаешь без интернета и сам действий на телефоне не выполняешь: если просят будильник, заметку или напоминание, " +
+                "скажи, что это делается командой, например «поставь будильник на 7 утра». Если не знаешь или не уверен, так и скажи, ничего не выдумывай. " +
+                (if (facts.isNotBlank()) "Что известно о пользователе: $facts." else "")
+            LocalLlm.answer(context, system, history, userText)
+        }
 
     private suspend fun loop(ep: Endpoint, s: AppSettings, history: List<Pair<String, String>>, userText: String): String {
         val messages = JSONArray()
@@ -124,6 +149,13 @@ class AiAgent(private val context: Context, private val executor: CommandExecuto
         try {
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
             if (conn.responseCode !in 200..299) {
+                val code = conn.responseCode
+                if (code == 429 || code == 402 || code == 503 || code >= 500) {
+                    throw AiUnavailable(
+                        if (ep.relay) "Бесплатный лимит ИИ сейчас исчерпан или сервер недоступен. Попробуй позже, вставь свой ключ ИИ или скачай ИИ в телефон (настройки помощника)."
+                        else "ИИ сейчас недоступен (код $code): проверь счёт на console.anthropic.com или попробуй позже.",
+                    )
+                }
                 return if (ep.relay) {
                     when (conn.responseCode) {
                         401 -> "Чтобы пользоваться ИИ, войди в аккаунт LifeOS (вкладка «Профиль»). Для этого в приложении должно быть подключено облако."

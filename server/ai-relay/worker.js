@@ -12,6 +12,10 @@
 //   FIREBASE_PROJECT_ID  необязательно: идентификатор проекта Firebase. Тогда ИИ получают только вошедшие в аккаунт
 //                  пользователи, а лимит считается на каждый аккаунт (проверяется подпись входа Google)
 //   USER_DAILY_LIMIT     запросов в сутки на один аккаунт, по умолчанию 25
+//   FALLBACK_KEY   необязательно: платный ключ Claude (console.anthropic.com). Включается только когда бесплатный провайдер
+//                  отказал (лимит кончился или сбой), поэтому платите только за то, что не влезло в бесплатное
+//   FALLBACK_MODEL модель для запасного ключа, по умолчанию claude-haiku-5-5 (дешёвая и быстрая)
+//   FALLBACK_DAILY_LIMIT  потолок платных запросов в сутки на весь сервис, по умолчанию 300
 //   LIMITS         необязательно: хранилище KV для суточных счётчиков (иначе счёт в памяти и он мягкий)
 
 const DEFAULT_URL = "https://api.groq.com/openai/v1/chat/completions";
@@ -56,12 +60,20 @@ export default {
 
     const kind = (env.UPSTREAM_KIND || "openai").toLowerCase();
     const model = env.MODEL || DEFAULT_MODEL;
+    let primary;
     try {
-      if (kind === "anthropic") return await viaAnthropic(body, env, model);
-      return await viaOpenAI(body, env, model);
+      primary = kind === "anthropic" ? await viaAnthropic(body, env.UPSTREAM_KEY, env.UPSTREAM_URL, model) : await viaOpenAI(body, env, model);
     } catch (e) {
-      return json({ error: "upstream_unreachable" }, 502);
+      primary = json({ error: "upstream_unreachable" }, 502);
     }
+    // Бесплатный провайдер отказал: если задан платный ключ, отвечаем им, но не больше суточного потолка
+    if ((primary.status === 429 || primary.status >= 500) && env.FALLBACK_KEY &&
+        (await dailyAllow(env, "fallback-global", Number(env.FALLBACK_DAILY_LIMIT) || 300))) {
+      try {
+        return await viaAnthropic(body, env.FALLBACK_KEY, undefined, env.FALLBACK_MODEL || "claude-haiku-5-5");
+      } catch { /* остаётся ответ основного провайдера */ }
+    }
+    return primary;
   },
 };
 
@@ -139,10 +151,10 @@ export async function verifyFirebaseToken(token, projectId, now = Date.now()) {
   return ok ? claims : null;
 }
 
-async function viaAnthropic(body, env, model) {
-  const res = await fetch(env.UPSTREAM_URL || "https://api.anthropic.com/v1/messages", {
+async function viaAnthropic(body, key, url, model) {
+  const res = await fetch(url || "https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": env.UPSTREAM_KEY, "anthropic-version": "2023-06-01" },
+    headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
     body: JSON.stringify({ ...body, model, max_tokens: Math.min(body.max_tokens || 1024, MAX_TOKENS) }),
   });
   return new Response(await res.text(), { status: res.status, headers: { "content-type": "application/json" } });
