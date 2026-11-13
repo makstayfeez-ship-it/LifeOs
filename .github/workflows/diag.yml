@@ -1,0 +1,36 @@
+name: Diagnostics (temporary)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/diag.yml'
+permissions:
+  contents: read
+jobs:
+  litert:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: LiteRT-LM versions and Kotlin they need
+        run: |
+          base=https://dl.google.com/dl/android/maven2/com/google/ai/edge/litertlm/litertlm-android
+          curl -fsS $base/maven-metadata.xml | tr -d ' \n' | sed 's/<version>/\n/g' | sed 's/<\/version>.*//' | grep -E '^[0-9]' > v.txt || true
+          echo "VERSIONS: $(tr '\n' ' ' < v.txt)"
+          for v in $(cat v.txt); do
+            pom=$(curl -fsS $base/$v/litertlm-android-$v.pom || true)
+            k=$(echo "$pom" | tr -d ' \n' | grep -o 'kotlin-stdlib</artifactId><version>[^<]*' | sed 's/.*<version>//' | head -1)
+            c=$(echo "$pom" | tr -d ' \n' | grep -o 'kotlinx-coroutines-core[a-z-]*</artifactId><version>[^<]*' | sed 's/.*<version>//' | head -1)
+            echo "VER $v stdlib=$k coroutines=$c"
+          done
+      - name: API of the newest version
+        run: |
+          base=https://dl.google.com/dl/android/maven2/com/google/ai/edge/litertlm/litertlm-android
+          v=$(tail -1 v.txt)
+          curl -fsS -o x.aar $base/$v/litertlm-android-$v.aar
+          mkdir x && cd x && unzip -q ../x.aar && ls; unzip -q -o classes.jar -d cls
+          find cls -name '*.class' | sed 's/cls\///' | head -80
+          for c in Engine EngineConfig Backend 'Backend$CPU' Conversation ConversationConfig Contents Message SamplerConfig; do
+            echo "=== $c"; javap -public -cp cls "com.google.ai.edge.litertlm.$c" 2>&1 | head -30
+          done
