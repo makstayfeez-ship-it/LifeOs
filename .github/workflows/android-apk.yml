@@ -50,8 +50,14 @@ jobs:
             cp ci/fake-google-services.json app/google-services.json
             echo "Проверочная сборка с фальшивым Firebase (не публикуется)"
           elif [ -n "$GOOGLE_SERVICES_JSON" ]; then
-            printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
-            echo "Firebase подключён"
+            printf '%s' "$GOOGLE_SERVICES_JSON" > "$RUNNER_TEMP/gs.json"
+            echo "Секрет: ${#GOOGLE_SERVICES_JSON} символов, первый символ '${GOOGLE_SERVICES_JSON:0:1}', последний '${GOOGLE_SERVICES_JSON: -1}'"
+            if pid=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert any(c['client_info']['android_client_info']['package_name']=='com.lifeos.app' for c in d['client']); print(d['project_info']['project_id'])" "$RUNNER_TEMP/gs.json"); then
+              cp "$RUNNER_TEMP/gs.json" app/google-services.json
+              echo "Firebase подключён, проект: $pid"
+            else
+              echo "::warning::Секрет GOOGLE_SERVICES_JSON неполный или не от пакета com.lifeos.app: сборка пойдёт без облака. Вставьте в секрет весь текст файла от { до }."
+            fi
           else
             echo "Firebase не настроен: приложение соберётся в локальном режиме"
           fi
