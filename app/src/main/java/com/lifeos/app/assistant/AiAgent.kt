@@ -2,6 +2,7 @@ package com.lifeos.app.assistant
 
 import android.content.Context
 import com.lifeos.app.BuildConfig
+import com.google.firebase.auth.FirebaseAuth
 import com.lifeos.app.container
 import com.lifeos.app.data.AppSettings
 import java.net.HttpURLConnection
@@ -12,6 +13,7 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -27,16 +29,25 @@ class AiAgent(private val context: Context, private val executor: CommandExecuto
     /** Куда отправлять запросы: свой ключ Anthropic или бесплатный сервер LifeOS (ключ тогда не нужен). */
     private class Endpoint(val url: String, val headers: Map<String, String>, val relay: Boolean)
 
-    private fun endpoint(s: AppSettings): Endpoint? {
+    private suspend fun endpoint(s: AppSettings): Endpoint? {
         if (s.apiKey.isNotBlank()) {
             return Endpoint(API_URL, mapOf("x-api-key" to s.apiKey, "anthropic-version" to "2023-06-01"), relay = false)
         }
         val base = relayBase(s) ?: return null
-        return Endpoint(
-            "$base/v1/messages",
-            mapOf("x-device-id" to deviceId(), "x-app-token" to BuildConfig.AI_RELAY_TOKEN),
-            relay = true,
-        )
+        val headers = buildMap {
+            put("x-device-id", deviceId())
+            put("x-app-token", BuildConfig.AI_RELAY_TOKEN)
+            // Вошедшему в аккаунт ИИ подключается сам: сервер узнаёт его по подписи входа Firebase
+            idToken()?.let { put("authorization", "Bearer $it") }
+        }
+        return Endpoint("$base/v1/messages", headers, relay = true)
+    }
+
+    /** Подтверждение входа в аккаунт LifeOS (обновляется само). Нет облака или не вошли: null. */
+    private suspend fun idToken(): String? = try {
+        if (context.container.auth.cloudAvailable) FirebaseAuth.getInstance().currentUser?.getIdToken(false)?.await()?.token else null
+    } catch (e: Exception) {
+        null
     }
 
     private fun deviceId(): String {
@@ -115,7 +126,8 @@ class AiAgent(private val context: Context, private val executor: CommandExecuto
             if (conn.responseCode !in 200..299) {
                 return if (ep.relay) {
                     when (conn.responseCode) {
-                        429 -> "Бесплатный лимит ИИ сейчас исчерпан. Попробуй позже или вставь свой ключ ИИ в настройках помощника."
+                        401 -> "Чтобы пользоваться ИИ, войди в аккаунт LifeOS (вкладка «Профиль»). Для этого в приложении должно быть подключено облако."
+                        429 -> "Бесплатный лимит ИИ сейчас исчерпан (на сегодня или на сервер в целом). Попробуй позже или вставь свой ключ ИИ в настройках помощника."
                         403 -> "Сервер ИИ не принял приложение. Нужна свежая версия LifeOS."
                         503 -> "Сервер ИИ ещё не настроен владельцем приложения."
                         else -> "Сервер ИИ сейчас недоступен (код ${conn.responseCode}). Попробуй позже."

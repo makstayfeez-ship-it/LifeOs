@@ -41,12 +41,33 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
+      # Облако (вход в аккаунт, синхронизация, ИИ по аккаунту): содержимое google-services.json хранится в секрете GOOGLE_SERVICES_JSON
+      - name: Firebase config (optional)
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -f ci/fake-firebase ]; then
+            cp ci/fake-google-services.json app/google-services.json
+            echo "Проверочная сборка с фальшивым Firebase (не публикуется)"
+          elif [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
+            echo "Firebase подключён"
+          else
+            echo "Firebase не настроен: приложение соберётся в локальном режиме"
+          fi
+
       - name: Build APK
         env:
           # Необязательно: адрес бесплатного сервера ИИ (Settings → Secrets and variables → Actions → Variables)
           AI_RELAY_URL: ${{ vars.AI_RELAY_URL }}
           AI_RELAY_TOKEN: ${{ vars.AI_RELAY_TOKEN }}
         run: ./gradlew --no-daemon assembleDebug
+
+      - name: Check Firebase was applied
+        if: ${{ hashFiles('app/google-services.json') != '' }}
+        run: |
+          f=$(find app/build -path '*google-services*' -name values.xml | head -1)
+          test -n "$f" && grep -q google_app_id "$f" && echo "Firebase подключён к сборке: $f"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -58,6 +79,7 @@ jobs:
 
       # Русская модель речи (около 45 МБ): один раз выкладываем на Releases, оттуда её скачивает приложение
       - name: Mirror speech model to Releases (once)
+        if: ${{ hashFiles('ci/fake-firebase') == '' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -73,6 +95,7 @@ jobs:
 
       # Готовый APK кладём на страницу Releases: его скачивают одним нажатием, без архива
       - name: Publish APK to Releases
+        if: ${{ hashFiles('ci/fake-firebase') == '' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
