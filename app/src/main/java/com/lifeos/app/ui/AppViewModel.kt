@@ -128,6 +128,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun continueOffline(name: String) = c.auth.continueOffline(name.trim())
+
+    fun checkNetwork(done: (List<com.lifeos.app.data.NetCheck.Row>) -> Unit) {
+        viewModelScope.launch {
+            val relay = com.lifeos.app.assistant.AiAgent.relayBase(c.settings.current())
+            val extra = if (relay != null) listOf("Сервер ИИ LifeOS" to relay) else emptyList()
+            done(com.lifeos.app.data.NetCheck.run(extra))
+        }
+    }
+
     fun updateName(name: String, done: (String) -> Unit) {
         viewModelScope.launch {
             c.auth.updateName(name.trim())
