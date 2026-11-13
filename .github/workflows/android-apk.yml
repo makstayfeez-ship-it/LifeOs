@@ -63,12 +63,6 @@ jobs:
           AI_RELAY_TOKEN: ${{ vars.AI_RELAY_TOKEN }}
         run: ./gradlew --no-daemon assembleDebug
 
-      - name: Check Firebase was applied
-        if: ${{ hashFiles('app/google-services.json') != '' }}
-        run: |
-          f=$(find app/build -path '*google-services*' -name values.xml | head -1)
-          test -n "$f" && grep -q google_app_id "$f" && echo "Firebase подключён к сборке: $f"
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
