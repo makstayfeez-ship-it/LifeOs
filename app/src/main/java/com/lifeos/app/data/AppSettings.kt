@@ -57,8 +57,6 @@ data class AppSettings(
     val localAiAlways: Boolean = false,
     /** Громкое напоминание на весь экран кроме обычного уведомления. */
     val loudReminders: Boolean = true,
-    /** Кнопка питания и жест от угла зовут помощника без голоса: окно со строкой для текста. */
-    val assistTextMode: Boolean = false,
     /** Что помощник помнит о пользователе: по одному факту в строке. */
     val memory: String = "",
     val muteRecognizerBeep: Boolean = true,
@@ -117,7 +115,6 @@ private object K {
     val relayUrl = stringPreferencesKey("relay_url")
     val localAiAlways = booleanPreferencesKey("local_ai_always")
     val loudReminders = booleanPreferencesKey("loud_reminders")
-    val assistTextMode = booleanPreferencesKey("assist_text_mode")
     val memory = stringPreferencesKey("assistant_memory")
     val muteRecognizerBeep = booleanPreferencesKey("mute_recognizer_beep")
     val speakBrief = booleanPreferencesKey("speak_brief")
@@ -171,7 +168,6 @@ private fun Preferences.toSettings(): AppSettings {
         relayUrl = this[K.relayUrl] ?: d.relayUrl,
         localAiAlways = this[K.localAiAlways] ?: d.localAiAlways,
         loudReminders = this[K.loudReminders] ?: d.loudReminders,
-        assistTextMode = this[K.assistTextMode] ?: d.assistTextMode,
         memory = this[K.memory] ?: d.memory,
         muteRecognizerBeep = this[K.muteRecognizerBeep] ?: d.muteRecognizerBeep,
         speakBrief = this[K.speakBrief] ?: d.speakBrief,
@@ -224,7 +220,6 @@ private fun MutablePreferences.write(s: AppSettings) {
     this[K.relayUrl] = s.relayUrl
     this[K.localAiAlways] = s.localAiAlways
     this[K.loudReminders] = s.loudReminders
-    this[K.assistTextMode] = s.assistTextMode
     this[K.memory] = s.memory
     this[K.muteRecognizerBeep] = s.muteRecognizerBeep
     this[K.speakBrief] = s.speakBrief

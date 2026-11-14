@@ -4,6 +4,7 @@ import android.content.Intent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Loop
+import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
@@ -125,6 +127,7 @@ fun HomeScreen(vm: AppViewModel, go: (String) -> Unit) {
     }
     val accent = LocalAccent.current
     val callRobot = rememberMicRequest { AssistantControl.summon(context) }
+    val remindVoice = rememberMicRequest { AssistantControl.remind(context) }
     // Мгновенная голосовая заметка: одно нажатие, говорите, окно само закроется
     val quickNote = rememberMicRequest {
         context.startActivity(Intent(context, QuickNoteActivity::class.java))
@@ -158,20 +161,15 @@ fun HomeScreen(vm: AppViewModel, go: (String) -> Unit) {
             ) {
                 Icon(Icons.Rounded.StickyNote2, contentDescription = "Быстрая голосовая заметка", tint = accent)
             }
-            Box(
-                Modifier.padding(start = 10.dp).size(48.dp).clip(CircleShape).background(accent).clickable { callRobot() },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Rounded.Mic, contentDescription = "Позвать помощника", tint = Color.White)
-            }
+            AssistantCallButton(
+                accent = accent,
+                onVoice = { callRobot() },
+                onText = { com.lifeos.app.assistant.TextAssist.open(context) },
+                onRemind = { remindVoice() },
+                modifier = Modifier.padding(start = 10.dp),
+            )
         }
-
-        Text(
-            "Блокнот: быстрая голосовая заметка. Микрофон: позвать помощника. Или скажите «${settings.assistantName}», «LifeOS» или «OS»",
-            color = GrayText,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
-        )
+        Box(Modifier.padding(bottom = 16.dp))
 
         // Если помощнику чего-то не хватает, говорим об этом сразу, а не оставляем его молча не работать
         val resumeTick = com.lifeos.app.ui.rememberResumeTick()
@@ -257,6 +255,58 @@ fun HomeScreen(vm: AppViewModel, go: (String) -> Unit) {
     reviewGoal?.let { g -> GoalReviewDialog(vm, g, onClose = { reviewGoal = null }) }
 }
 
+/**
+ * Кнопка вызова помощника. Нажатие зовёт голосом. Если зажать, появляется меню: говорить, писать бесшумно
+ * (внизу экрана строка для текста, ответ приходит текстом) или поставить напоминание.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun AssistantCallButton(
+    accent: Color,
+    onVoice: () -> Unit,
+    onText: () -> Unit,
+    onRemind: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var menu by remember { mutableStateOf(false) }
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    Box(modifier) {
+        Box(
+            Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(accent)
+                .combinedClickable(
+                    onClick = onVoice,
+                    onLongClick = {
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        menu = true
+                    },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Rounded.Mic, contentDescription = "Позвать помощника", tint = Color.White)
+        }
+        androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            androidx.compose.material3.DropdownMenuItem(
+                text = { Text("Голосом") },
+                leadingIcon = { Icon(Icons.Rounded.Mic, null) },
+                onClick = { menu = false; onVoice() },
+            )
+            androidx.compose.material3.DropdownMenuItem(
+                text = { Text("Бесшумно: писать") },
+                leadingIcon = { Icon(Icons.Rounded.Keyboard, null) },
+                onClick = { menu = false; onText() },
+            )
+            androidx.compose.material3.DropdownMenuItem(
+                text = { Text("Напоминание") },
+                leadingIcon = { Icon(Icons.Rounded.Notifications, null) },
+                onClick = { menu = false; onRemind() },
+            )
+        }
+    }
+}
+
 /** Круговой индикатор прогресса (используется для цели и привычек). */
 @Composable
 fun ProgressRing(fraction: Float, label: String, modifier: Modifier = Modifier, stroke: Float = 7f) {
@@ -295,7 +345,7 @@ fun AppsScreen(go: (String) -> Unit) {
             Triple("Оформление", Icons.Rounded.Palette, "theme"),
             Triple("Виджеты", Icons.Rounded.Widgets, "widgets"),
             Triple("Безопасность", Icons.Rounded.Lock, "security"),
-            Triple("Дополнительно", Icons.Rounded.Settings, "extras"),
+            Triple("Аккаунт", Icons.Rounded.Settings, "account"),
         )
         items.chunked(3).forEach { row ->
             Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

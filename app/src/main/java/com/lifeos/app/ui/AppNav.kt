@@ -149,6 +149,7 @@ fun AppNav(vm: AppViewModel) {
                 composable("goals") { GoalsScreen(vm, back) }
                 composable("widgets") { WidgetsScreen(back) }
                 composable("account") { AccountScreen(vm, back) }
+                composable("security") { SecurityScreen(vm, back) }
             }
         }
 

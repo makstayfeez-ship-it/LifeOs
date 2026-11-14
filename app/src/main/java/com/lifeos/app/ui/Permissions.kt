@@ -73,6 +73,11 @@ object Perms {
             appDetailsSettings(context)
         }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
+    /** Снято ли ограничение батареи с приложения (иначе система может усыпить помощника и напоминания). */
+    fun batteryUnrestricted(context: Context): Boolean =
+        runCatching { context.getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName) }
+            .getOrDefault(false)
+
     fun batterySettings() = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     fun accessibilitySettings() = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

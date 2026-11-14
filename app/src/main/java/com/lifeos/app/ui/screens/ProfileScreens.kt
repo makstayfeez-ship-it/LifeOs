@@ -186,8 +186,8 @@ fun CloudSection(vm: AppViewModel) {
     SectionTitle("Облако")
     InfoCard(Modifier.fillMaxWidth()) {
         Text(
-            if (cloud) "Ваши данные сохраняются в облаке автоматически через несколько секунд после изменения."
-            else "Облако не подключено: данные хранятся только на этом телефоне. Чтобы они сохранялись в аккаунте, подключите Firebase (см. README).",
+            if (cloud) "Данные сохраняются в облаке сами."
+            else "Облако не подключено: данные только на этом телефоне.",
             color = GrayText,
             style = MaterialTheme.typography.bodyMedium,
         )
@@ -220,11 +220,6 @@ fun ExitSection(vm: AppViewModel) {
 
     SectionTitle("О приложении")
     Text("LifeOS 0.3", color = Snow)
-    Text(
-        "Помощник, заметки голосом, дела, финансы и привычки в одном приложении.",
-        color = GrayText,
-        style = MaterialTheme.typography.bodySmall,
-    )
 
     if (confirmExit) {
         FormDialog(

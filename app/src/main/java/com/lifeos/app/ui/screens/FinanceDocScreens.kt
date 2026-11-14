@@ -7,6 +7,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.Canvas
@@ -96,48 +99,22 @@ fun FinanceScreen(vm: AppViewModel, onBack: () -> Unit) {
         .toList()
         .sortedByDescending { it.second }
 
-    // Точки графика: суммы по отрезкам периода
+    // Баланс по дням: пополнение поднимает линию, расход опускает, ноль на середине графика
     val buckets = (period.days + period.bucketDays - 1) / period.bucketDays
-    val points = LongArray(buckets)
-    shown.forEach { e ->
+    val deltas = LongArray(buckets)
+    inPeriod.forEach { e ->
         val day = java.time.Instant.ofEpochMilli(e.createdAt).atZone(zone).toLocalDate()
         val offset = java.time.temporal.ChronoUnit.DAYS.between(today.minusDays(period.days - 1L), day).toInt()
-        if (offset in 0 until period.days) points[offset / period.bucketDays] += e.amountRub
+        if (offset in 0 until period.days) deltas[offset / period.bucketDays] += if (e.income) e.amountRub else -e.amountRub
     }
-
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val settings by vm.settings.collectAsState()
-    val tick = rememberResumeTick()
-    val listenerOn = remember(tick) {
-        androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+    val points = LongArray(buckets)
+    var running = 0L
+    for (i in 0 until buckets) {
+        running += deltas[i]
+        points[i] = running
     }
 
     LifeScreen("Финансы", onBack = onBack) {
-        // Автоучёт: расходы и поступления берутся из уведомлений банков, вручную вводить не нужно
-        InfoCard(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
-            Text("Автоучёт по картам", color = Snow, style = MaterialTheme.typography.titleMedium)
-            Text(
-                if (listenerOn && settings.autoFinance) "Включён: покупки, списания и пополнения из уведомлений банков записываются сами."
-                else if (!listenerOn) "Разрешите LifeOS читать уведомления, и траты с пополнениями из банковских приложений и SMS будут появляться здесь сами. Работают Сбер, Т-Банк, ВТБ, Альфа, Райффайзен и другие."
-                else "Выключен.",
-                color = GrayText,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
-            )
-            if (!listenerOn) {
-                PillButton(
-                    "Разрешить доступ к уведомлениям",
-                    { context.startActivity(com.lifeos.app.ui.Perms.notificationListenerSettings()) },
-                    Modifier.fillMaxWidth(),
-                )
-                com.lifeos.app.ui.components.RestrictedSettingsHelp(
-                    "Если Android пишет «Настройки с ограниченным доступом» или переключатель не включается",
-                )
-            } else {
-                SwitchRow("Считать автоматически", settings.autoFinance, { on -> vm.update { it.copy(autoFinance = on) } })
-            }
-        }
-
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             LifeChip("Расходы", !incomeTab, { incomeTab = false })
             LifeChip("Доходы", incomeTab, { incomeTab = true })
@@ -155,7 +132,7 @@ fun FinanceScreen(vm: AppViewModel, onBack: () -> Unit) {
         Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Periods.forEachIndexed { i, p -> LifeChip(p.label, periodIndex == i, { periodIndex = i }) }
         }
-        LineChart(points, Modifier.fillMaxWidth().padding(top = 12.dp).height(130.dp))
+        BalanceChart(points, Modifier.fillMaxWidth().padding(top = 12.dp).height(150.dp))
 
         SectionTitle("По категориям")
         if (byCategory.isEmpty()) EmptyHint(if (incomeTab) "Доходов за этот период нет" else "Расходов за этот период нет")
@@ -222,38 +199,65 @@ fun FinanceScreen(vm: AppViewModel, onBack: () -> Unit) {
     }
 }
 
-/** Линейный график по точкам; ось Y автоматически подстраивается под максимум. */
+/**
+ * График баланса. Ноль посередине: пополнение уводит линию вверх, расход вниз. Пока баланс в плюсе, линия выше середины
+ * (расход лишь опускает её ближе к середине), в минусе ниже. Над нулём линия цвета акцента, под нулём красная.
+ */
 @Composable
-private fun LineChart(points: LongArray, modifier: Modifier = Modifier) {
+private fun BalanceChart(points: LongArray, modifier: Modifier = Modifier) {
     val accent = LocalAccent.current
-    Canvas(modifier.clip(RoundedCornerShape(18.dp)).background(CardColor).padding(14.dp)) {
-        val max = (points.maxOrNull() ?: 0L).coerceAtLeast(1L).toFloat()
-        val n = points.size
-        if (n < 2) return@Canvas
-        val stepX = size.width / (n - 1)
-        fun y(v: Long) = size.height - (v / max) * size.height
-        // сетка
-        for (i in 0..2) {
-            val gy = size.height * i / 2f
-            drawLine(Color(0x22FFFFFF), Offset(0f, gy), Offset(size.width, gy), strokeWidth = 1f)
-        }
-        val line = Path()
-        val fill = Path()
-        points.forEachIndexed { i, v ->
-            val x = stepX * i
-            if (i == 0) {
-                line.moveTo(x, y(v))
-                fill.moveTo(x, size.height)
-                fill.lineTo(x, y(v))
-            } else {
-                line.lineTo(x, y(v))
-                fill.lineTo(x, y(v))
+    val red = Color(0xFFFF6B6B)
+    val limit = (points.maxOfOrNull { kotlin.math.abs(it) } ?: 0L).coerceAtLeast(1L)
+    val hasData = points.any { it != 0L }
+    Box(modifier.clip(RoundedCornerShape(18.dp)).background(CardColor)) {
+        Canvas(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 18.dp)) {
+            val n = points.size
+            if (n < 2) return@Canvas
+            val mid = size.height / 2f
+            val stepX = size.width / (n - 1)
+            fun y(v: Float) = mid - v / limit * mid
+
+            // линия нуля
+            drawLine(
+                Color(0x66FFFFFF), Offset(0f, mid), Offset(size.width, mid), strokeWidth = 1.5f,
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f)),
+            )
+            // заливка между линией баланса и нулём
+            val fill = Path().apply {
+                moveTo(0f, mid)
+                points.forEachIndexed { i, v -> lineTo(stepX * i, y(v.toFloat())) }
+                lineTo(size.width, mid)
+                close()
             }
+            clipRect(top = 0f, bottom = mid) { drawPath(fill, accent.copy(alpha = 0.18f)) }
+            clipRect(top = mid, bottom = size.height) { drawPath(fill, red.copy(alpha = 0.18f)) }
+            // сама линия: отрезки над нулём одним цветом, под нулём другим, пересечение нуля делим пополам
+            fun seg(xa: Float, va: Float, xb: Float, vb: Float) {
+                drawLine(
+                    if (va + vb >= 0f) accent else red,
+                    Offset(xa, y(va)), Offset(xb, y(vb)),
+                    strokeWidth = 4f, cap = StrokeCap.Round,
+                )
+            }
+            for (i in 0 until n - 1) {
+                val x0 = stepX * i
+                val x1 = stepX * (i + 1)
+                val v0 = points[i].toFloat()
+                val v1 = points[i + 1].toFloat()
+                if (v0 * v1 < 0f) {
+                    val xm = x0 + (x1 - x0) * (v0 / (v0 - v1))
+                    seg(x0, v0, xm, 0f)
+                    seg(xm, 0f, x1, v1)
+                } else {
+                    seg(x0, v0, x1, v1)
+                }
+            }
+            if (n <= 31) points.forEachIndexed { i, v -> drawCircle(if (v >= 0) accent else red, 4f, Offset(stepX * i, y(v.toFloat()))) }
         }
-        fill.lineTo(size.width, size.height)
-        fill.close()
-        drawPath(fill, accent.copy(alpha = 0.15f))
-        drawPath(line, accent, style = Stroke(width = 4f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-        if (n <= 31) points.forEachIndexed { i, v -> drawCircle(accent, 4f, Offset(stepX * i, y(v))) }
+        if (hasData) {
+            Text("+" + Fmt.money(limit), color = GrayText, fontSize = 10.sp, modifier = Modifier.align(Alignment.TopStart).padding(start = 8.dp, top = 4.dp))
+            Text("0", color = GrayText, fontSize = 10.sp, modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp, bottom = 14.dp))
+            Text("−" + Fmt.money(limit), color = GrayText, fontSize = 10.sp, modifier = Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = 4.dp))
+        }
     }
 }

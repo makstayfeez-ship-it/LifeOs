@@ -137,8 +137,7 @@ fun MorningSettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
             "Показывать на экране блокировки",
             s.briefOnLock,
             { on -> vm.update { it.copy(briefOnLock = on) } },
-            subtitle = "Когда вы утром включите экран телефона, обзор появится сразу поверх блокировки: погода, дела, привычки, цель. " +
-                "Нажмёте «Начать день», и откроется обычный экран телефона. Ниже список того, что должно быть разрешено.",
+            subtitle = "Утром при включении экрана обзор появится поверх блокировки.",
         )
         if (s.briefOnLock) LockScreenChecklist(context, tick)
         PillButton(
@@ -234,51 +233,41 @@ fun MorningSettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
 }
 
 
-/** Что должно быть включено, чтобы утренний обзор вылезал поверх экрана блокировки, и кнопки для каждого пункта. */
+/**
+ * Что ещё не разрешено, чтобы утренний обзор и громкие напоминания появлялись поверх экрана блокировки.
+ * Показывает только недостающее: когда всё выдано, блок пропадает.
+ */
 @Composable
-private fun LockScreenChecklist(context: android.content.Context, tick: Int) {
+fun LockScreenChecklist(context: android.content.Context, tick: Int) {
     val overlayOk = remember(tick) { Perms.canOverlay(context) }
     val fullOk = remember(tick) { Perms.canFullScreenIntent(context) }
     val notifOk = remember(tick) { androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled() }
+    val batteryOk = remember(tick) { Perms.batteryUnrestricted(context) }
+    if (notifOk && overlayOk && fullOk && batteryOk) return
     val xiaomi = remember { android.os.Build.MANUFACTURER.lowercase() in setOf("xiaomi", "redmi", "poco") }
     val accent = LocalAccent.current
 
-    InfoCard(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-        Text("Чтобы обзор появлялся на блокировке", color = Snow, style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Android сам решает, можно ли приложению включать экран. Для этого должны стоять все пункты ниже.",
-            color = GrayText,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
-        )
-        LockRow("Уведомления разрешены", notifOk) { context.startActivity(Perms.appDetailsSettings(context)) }
-        LockRow("Поверх других приложений", overlayOk) { context.startActivity(Perms.overlaySettings(context)) }
-        if (android.os.Build.VERSION.SDK_INT >= 34) {
-            LockRow("Полноэкранные уведомления", fullOk) { context.startActivity(Perms.fullScreenIntentSettings(context)) }
-        }
-        LockRow("Без ограничений батареи (откройте и выберите «Не ограничивать»)", null) { context.startActivity(Perms.batterySettings()) }
+    InfoCard(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp)) {
+        Text("Нужно разрешить", color = Snow, style = MaterialTheme.typography.titleMedium)
+        if (!notifOk) LockRow("Уведомления") { context.startActivity(Perms.appDetailsSettings(context)) }
+        if (!overlayOk) LockRow("Поверх других приложений") { context.startActivity(Perms.overlaySettings(context)) }
+        if (!fullOk) LockRow("Полноэкранные уведомления") { context.startActivity(Perms.fullScreenIntentSettings(context)) }
+        if (!batteryOk) LockRow("Без ограничений батареи") { context.startActivity(Perms.batterySettings()) }
         if (xiaomi) {
             Text(
-                "Xiaomi, Redmi, POCO: откройте Настройки → Приложения → LifeOS → Другие разрешения и включите " +
-                    "«Показывать на заблокированном экране» и «Всплывающие окна, когда приложение в фоне».",
+                "Xiaomi: Приложения → LifeOS → Другие разрешения → «Показывать на заблокированном экране» и «Всплывающие окна в фоне».",
                 color = accent,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 6.dp),
-            )
-            PillButton(
-                "Открыть сведения о приложении",
-                { context.startActivity(Perms.appDetailsSettings(context)) },
-                Modifier.fillMaxWidth().padding(top = 6.dp),
-                outlined = true,
             )
         }
     }
 }
 
 @Composable
-private fun LockRow(title: String, ok: Boolean?, onOpen: () -> Unit) {
+private fun LockRow(title: String, onOpen: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title, color = Snow, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = 8.dp))
-        if (ok == true) com.lifeos.app.ui.components.LabelPill("включено") else PillButton("Открыть", onOpen)
+        PillButton("Открыть", onOpen)
     }
 }
