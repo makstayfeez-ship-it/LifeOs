@@ -112,6 +112,7 @@ class SpeechListener(private val context: Context) {
                 return@withContext SpeechResult.Error(SpeechRecognizer.ERROR_AUDIO)
             }
             val buf = ShortArray(chunk)
+            val gain = AutoGain()
             val started = SystemClock.elapsedRealtime()
             var spoke = false
             var lastPartial = ""
@@ -135,6 +136,7 @@ class SpeechListener(private val context: Context) {
                     AssistantStatus.error(MIC_BLOCKED)
                     return@withContext SpeechResult.Error(SpeechRecognizer.ERROR_AUDIO)
                 }
+                gain.apply(buf, n)
                 if (recognizer.acceptWaveForm(buf, n)) {
                     val text = JSONObject(recognizer.result).optString("text").trim()
                     return@withContext if (text.isBlank()) SpeechResult.Silence else SpeechResult.Heard(text)

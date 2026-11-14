@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -274,6 +275,24 @@ class TextAssistActivity : ComponentActivity() {
         }
     }
 
+    /** Экран, который был открыт, когда LifeOS позвали как системного помощника (без «Специальных возможностей»). */
+    private fun addScreen() {
+        val a = ScreenSnapshot.toAttachment()
+        if (a == null) {
+            notice = "Снимка экрана нет. Позовите LifeOS кнопкой питания или жестом на нужном экране"
+            return
+        }
+        val images = pending.sumOf { it.images.size } + a.images.size
+        when {
+            pending.size >= MAX_FILES -> notice = "Можно прикрепить не больше $MAX_FILES файлов за раз"
+            images > MAX_IMAGES -> notice = "Можно не больше $MAX_IMAGES картинок за раз"
+            else -> {
+                pending += a
+                notice = ""
+            }
+        }
+    }
+
     private fun addUris(uris: List<Uri>) {
         uris.forEach { uri ->
             loading++
@@ -367,6 +386,16 @@ class TextAssistActivity : ComponentActivity() {
                             contentAlignment = Alignment.Center,
                         ) { Icon(Icons.Rounded.Add, "Прикрепить", tint = accent, modifier = Modifier.size(26.dp)) }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            if (ScreenSnapshot.fresh()) {
+                                DropdownMenuItem(
+                                    text = { Text("Мой экран") },
+                                    leadingIcon = { Icon(Icons.Rounded.Smartphone, null) },
+                                    onClick = {
+                                        menu = false
+                                        addScreen()
+                                    },
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("Фото из галереи") },
                                 leadingIcon = { Icon(Icons.Rounded.Image, null) },

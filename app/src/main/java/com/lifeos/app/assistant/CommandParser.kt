@@ -110,6 +110,16 @@ object CommandParser {
             if (t.startsWith("$w ")) return t.removePrefix("$w ").trim()
         }
         fuzzyWakeRx.find(t)?.let { return t.substring(it.value.length).trim() }
+        // Распознаватель ошибся в паре букв («лайфус», «помощьник», имя помощника на свой лад): сравниваем по похожести
+        val words = t.split(" ").filter { it.isNotEmpty() }
+        if (words.isNotEmpty()) {
+            for (w in wakes) {
+                val flat = w.replace(" ", "")
+                if (flat.length < 5) continue
+                if (Fuzzy.ratio(words[0], flat) >= 80.0) return words.drop(1).joinToString(" ")
+                if (words.size >= 2 && Fuzzy.ratio(words[0] + words[1], flat) >= 80.0) return words.drop(2).joinToString(" ")
+            }
+        }
         return null
     }
 
@@ -144,6 +154,24 @@ object CommandParser {
         val t = normalize(raw)
         val m = reminderTriggerRx.find(t) ?: return null
         return m.groupValues[1].trim()
+    }
+
+    /** «Пока», «до свидания», «отбой»: после этих слов робот уходит. Всё остальное он слушает дальше. */
+    fun isGoodbye(raw: String): Boolean {
+        val tokens = normalize(raw).split(" ").filter { it.isNotEmpty() }
+        val filler = setOf("ну", "ладно", "все", "тогда", "ок", "окей", "хорошо")
+        val core = tokens.dropWhile { it in filler }
+        if (core.isEmpty() || core.size > 3) return false
+        val words = setOf("пока", "отбой", "уходи", "уйди", "прощай")
+        return (core.size == 1 && core[0] in words) ||
+            (core.last() == "пока") ||
+            (core[0] == "до" && core.size >= 2 && (core[1].startsWith("свидан") || core[1].startsWith("встреч"))) ||
+            (core.size == 2 && core[0] in words && core[1] in setOf("робот", "спасибо", "всем"))
+    }
+
+    fun isThanks(raw: String): Boolean {
+        val t = normalize(raw)
+        return t.startsWith("спасибо") || t.startsWith("благодарю")
     }
 
     fun parse(raw: String, nowMinutes: Int, today: java.time.LocalDate = java.time.LocalDate.now()): Command {
@@ -465,7 +493,17 @@ object CommandParser {
 
     private fun has(t: String, pattern: String) = Regex(pattern).containsMatchIn(t)
 
-    private fun deviceCommand(orig: String, t: String): Command? {
+    /** Фразы без «переменных частей», которые разбираются правилами выше. Опасные пары вроде «включи/выключи» сюда не входят. */
+    private val fuzzySamples = listOf(
+        "сделай громче", "сделай тише", "без звука",
+        "следующий трек", "предыдущий трек", "поставь на паузу", "включи музыку",
+        "сделай фото", "сделай скриншот", "последние приложения", "открой шторку", "заблокируй экран", "на главный экран",
+        "который час", "какое сегодня число", "заряд батареи", "какая погода",
+        "прочитай заметки", "прочитай список покупок",
+        "включи вайфай", "включи блютуз", "режим полета", "настройки звука",
+    )
+
+    private fun deviceCommand(orig: String, t: String, fuzzy: Boolean = true): Command? {
         // Фонарик
         if (has(t, "фонарик|фонарь|вспышк")) {
             return Command.Flashlight(!has(t, "выключ|погас|отключ|убери|потуши"))
@@ -505,6 +543,11 @@ object CommandParser {
         if (has(t, "настройки звука|режим звука")) return Command.OpenSettings("sound")
         if (has(t, "экономи\\p{L}* (?:заряда|батаре)")) return Command.OpenSettings("battery")
         if (has(t, "^(?:открой )?настройки(?: телефона)?$")) return Command.OpenSettings("general")
+
+        // Распознавание ошиблось в слове («заблакируй экран», «включи музыка»): ищем самую похожую команду
+        if (fuzzy) {
+            Fuzzy.closest(t, fuzzySamples)?.let { sample -> deviceCommand(sample, sample, fuzzy = false)?.let { return it } }
+        }
 
         // Навигация, поиск, звонок, SMS, запуск приложений
         Regex("^(?:проложи маршрут|построй маршрут|навигация|маршрут|как доехать|как добраться|поехали)\\s*(?:до|к|в|на)?\\s*(.+)$", RegexOption.IGNORE_CASE)

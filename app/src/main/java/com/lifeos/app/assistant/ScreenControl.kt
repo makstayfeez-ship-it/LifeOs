@@ -15,14 +15,17 @@ import android.view.accessibility.AccessibilityNodeInfo
  */
 object ScreenControl {
     const val NEED_ACCESS =
-        "Чтобы я видел экран и нажимал на нём, включите LifeOS в специальных возможностях: Проверка помощника, строка «Управление экраном»."
+        "Чтобы я видел экран и нажимал на нём, включите LifeOS в специальных возможностях. Смотреть на экран я могу и без этого: позовите меня кнопкой питания или жестом от угла экрана, когда LifeOS выбран помощником по умолчанию."
 
     val enabled: Boolean get() = ScreenWatcherService.instance != null
 
     private fun service(): AccessibilityService? = ScreenWatcherService.instance
 
+    /** Можно ли прочитать экран: через «Специальные возможности» или по снимку, сделанному при вызове системного помощника. */
+    val canRead: Boolean get() = enabled || ScreenSnapshot.fresh()
+
     fun readScreen(): String {
-        val svc = service() ?: return NEED_ACCESS
+        val svc = service() ?: return ScreenSnapshot.describe() ?: NEED_ACCESS
         val root = svc.rootInActiveWindow ?: return "Сейчас не вижу экран"
         val lines = LinkedHashSet<String>()
         val queue = ArrayDeque<AccessibilityNodeInfo>()

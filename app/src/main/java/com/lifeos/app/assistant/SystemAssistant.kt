@@ -1,7 +1,10 @@
 package com.lifeos.app.assistant
 
+import android.app.assist.AssistContent
+import android.app.assist.AssistStructure
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.provider.Settings
 import android.service.voice.VoiceInteractionService
@@ -57,12 +60,24 @@ private class LifeVoiceSession(context: Context) : VoiceInteractionSession(conte
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
         SystemAssistant.mark(context, SystemAssistant.KEY_SESSION)
+        // Android сам пришлёт текст и картинку экрана под помощником, их подхватывают два метода ниже
+        ScreenSnapshot.clear()
         val intent = Intent(context, AssistLaunchActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         // Окно запускаем из сеанса помощника: так Android разрешает включить микрофон, даже когда экран заблокирован
         val ok = runCatching { startAssistantActivity(intent) }.isSuccess
         if (!ok) {
             runCatching { context.startActivity(intent) }.onFailure { runCatching { AssistantControl.summon(context) } }
         }
+    }
+
+    /** Текст экрана, который был открыт, когда позвали помощника (без «Специальных возможностей»). */
+    @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
+    override fun onHandleAssist(data: Bundle?, structure: AssistStructure?, content: AssistContent?) {
+        runCatching { ScreenSnapshot.storeStructure(structure, content) }
+    }
+
+    override fun onHandleScreenshot(screenshot: Bitmap?) {
+        runCatching { ScreenSnapshot.storeScreenshot(screenshot) }
     }
 }
 

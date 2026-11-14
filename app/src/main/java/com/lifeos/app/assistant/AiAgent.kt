@@ -463,7 +463,7 @@ class AiAgent(private val context: Context, private val executor: CommandExecuto
             put(tool("flashlight", "Включить или выключить фонарик.", JSONObject().put("on", bool("true — включить")), listOf("on")))
             put(tool("media", "Управлять музыкой.", JSONObject().put("action", str("play, pause, next или prev")), listOf("action")))
             put(tool("volume", "Изменить громкость.", JSONObject().put("direction", str("up, down или mute")), listOf("direction")))
-            put(tool("read_screen", "Прочитать, что сейчас на экране телефона (нужен включённый доступ)."))
+            put(tool("read_screen", "Прочитать, что сейчас на экране телефона (нужен включённый доступ в специальных возможностях или вызов помощника кнопкой питания)."))
             put(tool("screen_click", "Нажать на экране на кнопку или текст (только по явной просьбе).", JSONObject().put("text", str("Надпись на кнопке или элементе")), listOf("text")))
             put(tool("screen_scroll", "Прокрутить экран.", JSONObject().put("direction", str("up или down")), listOf("direction")))
             put(tool("screen_type", "Напечатать текст в поле ввода на экране.", JSONObject().put("text", str("Текст")), listOf("text")))

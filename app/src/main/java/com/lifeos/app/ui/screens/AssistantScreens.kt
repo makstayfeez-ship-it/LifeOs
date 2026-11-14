@@ -206,6 +206,7 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () ->
     val tick = rememberResumeTick()
     val overlayOk = remember(tick) { Perms.canOverlay(context) }
     val watcherOk = remember(tick) { Perms.watcherEnabled(context) }
+    val assistantOk = remember(tick) { com.lifeos.app.assistant.SystemAssistant.isDefault(context) }
     val contactsOk = remember(tick) { Perms.hasContacts(context) }
     val callOk = remember(tick) { Perms.hasCall(context) }
     val askContacts = rememberPermissionsRequest(
@@ -334,15 +335,22 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () ->
 
         // Показываем только то, что ещё не выдано: выданные разрешения исчезают
         var triedAccess by remember { mutableStateOf(false) }
-        val missing = !overlayOk || !watcherOk || !(contactsOk && callOk)
+        val missing = !overlayOk || !watcherOk || !assistantOk || !(contactsOk && callOk)
         if (missing) SectionTitle("Нужно разрешить")
         if (!overlayOk) {
             PermissionRow("Поверх других приложений", "Робот на экране, будильник из фона", false) {
                 context.startActivity(Perms.overlaySettings(context))
             }
         }
+        if (!assistantOk) {
+            // Этот способ не упирается в «ограниченные настройки»: вызов кнопкой питания или жестом от угла экрана, плюс чтение экрана
+            PermissionRow("Вызов кнопкой питания или жестом", "Выберите LifeOS помощником по умолчанию", false) {
+                runCatching { context.startActivity(com.lifeos.app.assistant.SystemAssistant.settingsIntent()) }
+                    .onFailure { runCatching { context.startActivity(com.lifeos.app.assistant.SystemAssistant.fallbackSettingsIntent()) } }
+            }
+        }
         if (!watcherOk) {
-            PermissionRow("Вызов жестом и доступ к экрану", "Откроется список, включите LifeOS помощник", false) {
+            PermissionRow("Нажатия по экрану", "Включите LifeOS помощник в списке", false) {
                 triedAccess = true
                 context.startActivity(Perms.accessibilitySettings())
             }

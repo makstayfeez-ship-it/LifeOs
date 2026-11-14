@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.IBinder
+import android.os.SystemClock
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
@@ -76,6 +77,7 @@ class AssistantService : Service() {
 
     private var mainJob: Job? = null
     private var sessionJob: Job? = null
+    private var pendingMenu: String? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private val notepad by lazy { NotepadOverlay(this) }
     private val reminderCard by lazy { ReminderOverlay(this) }
@@ -89,6 +91,15 @@ class AssistantService : Service() {
         executor = CommandExecutor(this)
         overlay.onTap = {
             // Нажали на робота: он замолкает и уходит, но фоновое прослушивание продолжается
+            container.tts.stop()
+            listener.cancel()
+            sessionJob?.cancel()
+        }
+        overlay.onMenu = { action ->
+            // Кружки при удержании на роботе. Бесшумный режим открывается сразу, пока у нас ещё есть окно поверх экрана
+            // (так Android разрешает показать экран из фона); заметку и напоминание запускаем, когда робот уйдёт.
+            pendingMenu = action
+            if (action == RobotOverlay.MENU_SILENT) TextAssist.open(this)
             container.tts.stop()
             listener.cancel()
             sessionJob?.cancel()
@@ -290,10 +301,17 @@ class AssistantService : Service() {
     }
 
     private suspend fun runSession(s: AppSettings, first: String) = coroutineScope {
+        pendingMenu = null
         val job = launch { session(s, first) }
         sessionJob = job
         job.join()
         sessionJob = null
+        val menu = pendingMenu
+        pendingMenu = null
+        when (menu) {
+            RobotOverlay.MENU_NOTE -> quickNote(s, "")
+            RobotOverlay.MENU_REMIND -> quickReminder(s, "")
+        }
     }
 
     private suspend fun session(s: AppSettings, first: String) {
@@ -306,19 +324,25 @@ class AssistantService : Service() {
             // Раньше тут звучало «Слушаю», и пока оно говорилось, микрофон был закрыт: вы уже говорите, а вас не слышат.
             // Теперь сначала включается микрофон, и только потом короткий сигнал.
 
-            // Если молчать, робот уходит сам, и его нужно позвать заново. В разговоре с ИИ он остаётся,
-            // пока вы отвечаете.
+            // Робот остаётся и слушает дальше, пока вы сами его не отпустите: нажатием на него, словом «пока»
+            // или молчанием в течение 20 секунд.
             while (currentCoroutineContext().isActive) {
                 if (text.isBlank()) {
                     overlay.setMood(RobotMood.LISTENING)
-                    text = hear(s, retryOnSilence = true)
+                    text = hear(s)
                     if (text.isBlank()) break
                 }
 
+                if (CommandParser.isGoodbye(text)) {
+                    say("Пока!", s, RobotMood.HAPPY)
+                    break
+                }
                 val cmd = CommandParser.parse(text, nowMinutes())
                 if (cmd is Command.Dismiss) {
-                    say("Хорошо, я рядом", s, RobotMood.HAPPY)
-                    break
+                    // «Спасибо», «ничего», «отмена»: робот не уходит, а просто слушает дальше
+                    if (CommandParser.isThanks(text)) say("Пожалуйста", s, RobotMood.HAPPY)
+                    text = ""
+                    continue
                 }
 
                 // «Заметка»: сигнал, диктовка, запись текстом
@@ -328,7 +352,9 @@ class AssistantService : Service() {
                     val note = dictateNote(s)
                     val phrase = if (note.isBlank()) "Ничего не слышно" else "Заметка записана"
                     withTimeoutOrNull(10_000) { container.tts.speakAndWait(phrase, s) }
-                    break
+                    if (canShow) overlay.show(SkinCatalog.byId(s.skinId))
+                    text = ""
+                    continue
                 }
 
                 val working = cmd is Command.SetAlarm || cmd is Command.SetTimer
@@ -351,16 +377,14 @@ class AssistantService : Service() {
                 text = ""
                 if (res.followUp != null) {
                     overlay.setMood(RobotMood.LISTENING)
-                    val answer = hear(s, retryOnSilence = true)
+                    val answer = hear(s)
                     if (answer.isBlank()) break
                     text = "${res.followUp} $answer"
                     continue
                 }
-                // В обычном разговоре можно отвечать без повторного «LifeOS»; после команды робот уходит
-                if (cmd !is Command.Chat) break
             }
             overlay.setMood(RobotMood.HAPPY)
-            delay(1200)
+            delay(800)
         } finally {
             overlay.hide()
         }
@@ -374,22 +398,39 @@ class AssistantService : Service() {
     }
 
     /**
-     * Слушает фразу, показывая распознанное над роботом. Пустая строка — ничего не сказали.
-     * Сначала открывается микрофон, потом звучит короткий сигнал и появляется «Говорите…». Если вас не слышно,
-     * помощник один раз переспрашивает, а не молчит.
+     * Слушает фразу, показывая распознанное над роботом. Ждёт до 20 секунд тишины, потом возвращает пустую строку
+     * (робот уходит). Сначала открывается микрофон, потом звучит короткий сигнал и появляется «Говорите…».
      */
-    private suspend fun hear(s: AppSettings, retryOnSilence: Boolean): String {
+    private suspend fun hear(s: AppSettings): String {
         overlay.say("Включаю микрофон…")
-        return listenPhrase(
-            s,
-            retries = if (retryOnSilence) 1 else 0,
-            onPartial = { overlay.say(it) },
-            onReady = {
-                Beeps.ready()
-                overlay.say("Говорите…")
-            },
-            onRetry = { overlay.say("Не слышу вас. Говорите ближе к микрофону…") },
-        )
+        val deadline = SystemClock.elapsedRealtime() + SESSION_IDLE_MS
+        var beeped = false
+        while (currentCoroutineContext().isActive) {
+            val left = deadline - SystemClock.elapsedRealtime()
+            if (left < 1_000) return ""
+            val r = listener.listen(
+                accurate = s.googleDictation,
+                onPartial = { overlay.say(it) },
+                onReady = {
+                    if (!beeped) {
+                        beeped = true
+                        Beeps.ready()
+                    }
+                    overlay.say("Говорите…")
+                },
+                idleMs = left,
+            )
+            when (r) {
+                is SpeechResult.Heard -> return r.text
+                SpeechResult.Silence -> delay(150)
+                is SpeechResult.Error -> {
+                    if (r.code != SpeechListener.NO_RECOGNIZER) AssistantStatus.error(AssistantStatus.explain(r.code))
+                    if (r.fatal) return ""
+                    delay(300)
+                }
+            }
+        }
+        return ""
     }
 
     /** Одна фраза с повторными попытками: тишина или сбой микрофона не должны сразу заканчивать разговор. */
@@ -572,5 +613,8 @@ class AssistantService : Service() {
 
         /** Раз в минуту тишины микрофон ожидания перезапускается: так он не копит лишнего. */
         private const val WAKE_IDLE_MS = 60_000L
+
+        /** Сколько робот ждёт, пока вы что-нибудь скажете, прежде чем уйти. */
+        private const val SESSION_IDLE_MS = 20_000L
     }
 }
