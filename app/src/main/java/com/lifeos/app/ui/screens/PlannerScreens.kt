@@ -331,7 +331,7 @@ fun NotesScreen(vm: AppViewModel, onBack: () -> Unit) {
             partial = ""
             status = null
             scope.launch {
-                when (val r = listener.listen(accurate = true) { partial = it }) {
+                when (val r = listener.listen(accurate = true, onPartial = { partial = it })) {
                     is SpeechResult.Heard -> {
                         vm.addNote(r.text.trim())
                         status = "Записано"

@@ -53,7 +53,7 @@ class NotepadOverlay(private val context: Context) {
 
     private var text by mutableStateOf("")
 
-    /** 0 — слушаем, 1 — сохранено, 2 — ничего не записано. */
+    /** 0 — слушаем, 1 — сохранено, 2 — ничего не записано, 3 — включаем микрофон. */
     private var state by mutableStateOf(0)
     private var skin by mutableStateOf<RobotSkin>(SkinCatalog.default)
 
@@ -63,7 +63,7 @@ class NotepadOverlay(private val context: Context) {
     fun show(newSkin: RobotSkin) {
         skin = newSkin
         text = ""
-        state = 0
+        state = 3
         if (view != null) return
         val o = RobotOverlay.OverlayOwner().also { it.start() }
         owner = o
@@ -96,6 +96,11 @@ class NotepadOverlay(private val context: Context) {
 
     fun update(newText: String) {
         text = newText
+    }
+
+    /** Микрофон включился: можно говорить. */
+    fun ready() {
+        if (state == 3) state = 0
     }
 
     /** Показывает итог: «Заметка сохранена» или «Ничего не записано». Потом нужно вызвать [hide]. */
@@ -141,7 +146,8 @@ class NotepadOverlay(private val context: Context) {
                         when (state) {
                             1 -> "Сохранено в заметки"
                             2 -> "Ничего не записано"
-                            else -> "Говорю — я записываю"
+                            3 -> "Включаю микрофон…"
+                            else -> "Говорите — я записываю"
                         },
                         color = ink.copy(alpha = 0.6f),
                         fontSize = 13.sp,
@@ -165,7 +171,7 @@ class NotepadOverlay(private val context: Context) {
             ) {
                 val shown = text.takeLast(500)
                 if (shown.isBlank()) {
-                    Text("Начните говорить…", color = ink.copy(alpha = 0.35f), fontSize = 18.sp, lineHeight = 28.sp)
+                    Text(if (state == 3) "Секунду, включаю микрофон…" else "Начните говорить…", color = ink.copy(alpha = 0.35f), fontSize = 18.sp, lineHeight = 28.sp)
                 } else {
                     Text(shown + if (state == 0) " ▍" else "", color = ink, fontSize = 18.sp, lineHeight = 28.sp)
                 }
@@ -176,12 +182,12 @@ class NotepadOverlay(private val context: Context) {
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    if (state == 0) "Скажите «остановить», чтобы сохранить" else "",
+                    if (state == 0 || state == 3) "Скажите «остановить», чтобы сохранить" else "",
                     color = ink.copy(alpha = 0.6f),
                     fontSize = 12.sp,
                     modifier = Modifier.weight(1f),
                 )
-                if (state == 0) {
+                if (state == 0 || state == 3) {
                     Box(
                         Modifier
                             .clip(RoundedCornerShape(50))

@@ -40,7 +40,9 @@ import com.lifeos.app.ui.theme.Bg
 import com.lifeos.app.ui.theme.GrayText
 import com.lifeos.app.ui.theme.LifeTheme
 import com.lifeos.app.ui.theme.Snow
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Делает LifeOS системным голосовым помощником: когда его выбирают в настройках Android
@@ -76,6 +78,18 @@ class AssistLaunchActivity : ComponentActivity() {
         setShowWhenLocked(true)
         setTurnScreenOn(true)
         SystemAssistant.mark(this, SystemAssistant.KEY_ACTIVITY)
+        lifecycleScope.launch {
+            // Тихий режим: вместо голоса открывается строка для текста
+            if (container.settings.current().assistTextMode) {
+                TextAssist.open(this@AssistLaunchActivity)
+                finish()
+            } else {
+                startVoice()
+            }
+        }
+    }
+
+    private fun startVoice() {
         if (!AssistantControl.hasMic(this)) {
             // Нет доступа к микрофону: открываем приложение, оно попросит разрешение
             startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

@@ -379,10 +379,10 @@ private fun MorningLockContent(brief: Brief?, settings: AppSettings, hidePrivate
                             Text("Сегодня выполнено ${brief.habitsDone} из ${brief.habitsTotal}", color = Snow)
                         }
                     }
-                    if (brief.goalTitle != null && brief.goalProgress != null) {
+                    if (brief.goalTitle != null) {
                         GlassCard {
                             Text("Цель на год", color = accent, style = MaterialTheme.typography.titleMedium)
-                            Text("${brief.goalTitle}: ${brief.goalProgress}%", color = Snow)
+                            Text(if (brief.goalProgress != null) "${brief.goalTitle}: ${brief.goalProgress}%" else brief.goalTitle, color = Snow)
                         }
                     }
                 }

@@ -115,65 +115,77 @@ fun AccountScreen(vm: AppViewModel, onBack: () -> Unit) {
                 outlined = true,
             )
         }
+
+        // Всё, что раньше было отдельными пунктами профиля, теперь здесь
+        CloudSection(vm)
+        SectionTitle("Безопасность")
+        SecuritySection(vm)
+        NotificationsSection(vm)
+        PrivacySection()
+        ExitSection(vm)
+        androidx.compose.foundation.layout.Box(Modifier.padding(bottom = 24.dp))
     }
 }
 
+/** Уведомления: утренний обзор, скрытие на экране блокировки, системные настройки. */
 @Composable
-fun NotificationsSettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
+fun NotificationsSection(vm: AppViewModel) {
     val context = LocalContext.current
     val s by vm.settings.collectAsState()
-    LifeScreen("Уведомления", onBack = onBack) {
-        SectionTitle("Утренний обзор")
-        SwitchRow(
-            "Присылать утренний обзор",
-            s.morningEnabled,
-            { on -> vm.updateMorning { it.copy(morningEnabled = on) } },
-            subtitle = "Время и содержимое настраиваются в разделе «Утренний обзор».",
-        )
-        SwitchRow(
-            "Скрывать на экране блокировки",
-            s.hideLockNotifs,
-            { on -> vm.update { it.copy(hideLockNotifs = on) } },
-            subtitle = "Вместо дел и сумм будет нейтральный текст.",
-        )
-        SectionTitle("Системные настройки")
-        Text(
-            "Звук, баннеры и каналы уведомлений Android настраиваются в системе.",
-            color = GrayText,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(bottom = 8.dp),
-        )
-        PillButton(
-            "Открыть настройки уведомлений",
-            {
-                context.startActivity(
-                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                )
-            },
-            Modifier.fillMaxWidth(),
-            outlined = true,
-        )
-    }
+    SectionTitle("Уведомления")
+    SwitchRow(
+        "Присылать утренний обзор",
+        s.morningEnabled,
+        { on -> vm.updateMorning { it.copy(morningEnabled = on) } },
+        subtitle = "Время и содержимое настраиваются на экране «Обзор» (шестерёнка в углу).",
+    )
+    SwitchRow(
+        "Скрывать на экране блокировки",
+        s.hideLockNotifs,
+        { on -> vm.update { it.copy(hideLockNotifs = on) } },
+        subtitle = "Вместо дел и сумм будет нейтральный текст.",
+    )
+    SwitchRow(
+        "Громкое напоминание на весь экран",
+        s.loudReminders,
+        { on -> vm.update { it.copy(loudReminders = on) } },
+        subtitle = "Кроме обычного уведомления, в назначенную минуту на весь экран появится окно со звонком, чтобы точно не пропустить.",
+    )
+    Text(
+        "Звук, баннеры и каналы уведомлений Android настраиваются в системе.",
+        color = GrayText,
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.padding(top = 8.dp, bottom = 8.dp),
+    )
+    PillButton(
+        "Открыть настройки уведомлений",
+        {
+            context.startActivity(
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        },
+        Modifier.fillMaxWidth(),
+        outlined = true,
+    )
 }
 
+/** Что и где хранится. */
 @Composable
-fun PrivacyScreen(onBack: () -> Unit, onSecurity: () -> Unit) {
-    LifeScreen("Конфиденциальность", onBack = onBack) {
-        InfoCard(Modifier.fillMaxWidth()) {
-            Text(
-                "• Заметки, дела, финансы и привычки лежат в памяти телефона. В облако они попадают только если вы вошли в облачный аккаунт.\n" +
-                    "• Записи звука остаются только на телефоне и в облако не отправляются.\n" +
-                    "• Автоучёт денег читает только уведомления банков и не сохраняет их текст: в приложение попадают лишь сумма, магазин и направление.\n" +
-                    "• Микрофон слушает «LifeOS» только когда включено прослушивание (в шторке виден значок). Распознавание речи делает система Android.\n" +
-                    "• Робот «видит экран» только как положение кнопок и полей, текст не читается.\n" +
-                    "• Если вставлен ключ ИИ, текст ваших вопросов уходит в Anthropic. Без ключа помощник работает только с командами.\n" +
-                    "• Ключ ИИ и PIN-код не уходят в облако.",
-                color = GrayText,
-            )
-        }
-        PillButton("Блокировка и защита", onSecurity, Modifier.fillMaxWidth().padding(top = 12.dp), outlined = true)
+fun PrivacySection() {
+    SectionTitle("Конфиденциальность")
+    InfoCard(Modifier.fillMaxWidth()) {
+        Text(
+            "• Заметки, дела, финансы и привычки лежат в памяти телефона. В облако они попадают только если вы вошли в облачный аккаунт.\n" +
+                "• Записи звука остаются только на телефоне и в облако не отправляются.\n" +
+                "• Автоучёт денег читает только уведомления банков и не сохраняет их текст: в приложение попадают лишь сумма, магазин и направление.\n" +
+                "• Микрофон слушает «LifeOS» только когда включено прослушивание (в шторке виден значок). Распознавание речи идёт на телефоне.\n" +
+                "• Робот «видит экран» только как положение кнопок и полей, текст не читается.\n" +
+                "• Когда вы пишете или говорите помощнику вопрос (в том числе с фото и файлами), текст и вложения уходят на сервер ИИ, чтобы он ответил. Без ИИ помощник работает только с командами.\n" +
+                "• Ключ ИИ и PIN-код не уходят в облако.",
+            color = GrayText,
+        )
     }
 }
 

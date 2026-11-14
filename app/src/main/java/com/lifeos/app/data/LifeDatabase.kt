@@ -32,6 +32,9 @@ interface LifeDao {
     @Query("SELECT * FROM tasks WHERE epochDay = :day ORDER BY timeMinutes")
     suspend fun tasksForDay(day: Long): List<TaskEntity>
 
+    @Query("SELECT * FROM tasks WHERE id = :id")
+    suspend fun taskById(id: Long): TaskEntity?
+
     @Insert
     suspend fun insertTask(task: TaskEntity): Long
 

@@ -409,8 +409,6 @@ fun GoalsScreen(vm: AppViewModel, onBack: () -> Unit) {
     if (addDialog) {
         var title by remember { mutableStateOf("") }
         var emoji by remember { mutableStateOf(GoalEmojis.first()) }
-        var target by remember { mutableStateOf("") }
-        var unit by remember { mutableStateOf("₽") }
         FormDialog(
             title = "Цель на ${today.year} год",
             onDismiss = { addDialog = false },
@@ -422,19 +420,15 @@ fun GoalsScreen(vm: AppViewModel, onBack: () -> Unit) {
                         title = title.trim(),
                         year = today.year,
                         emoji = emoji,
-                        unit = unit,
-                        target = target.toDoubleOrNull() ?: 0.0,
+                        unit = "",
+                        target = 0.0,
                     )
                 }
                 addDialog = false
             },
         ) {
-            LifeField(title, { title = it }, "Например: накопить миллион")
+            LifeField(title, { title = it }, "Заполнить цель")
             HoldEmojiPicker(emoji, GoalEmojis, { emoji = it })
-            LifeField(target, { target = it.filter { c -> c.isDigit() || c == '.' }.take(12) }, "Сколько нужно (необязательно)", keyboardType = KeyboardType.Decimal)
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                GoalUnits.forEach { u -> LifeChip(u.ifBlank { "без ед." }, unit == u, { unit = u }) }
-            }
         }
     }
 

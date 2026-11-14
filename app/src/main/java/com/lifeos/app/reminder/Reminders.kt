@@ -59,6 +59,20 @@ object ReminderScheduler {
         }
     }
 
+    /** «Напомнить ещё раз через N минут»: одноразовый будильник на то же напоминание. */
+    fun snooze(context: Context, id: Long, title: String, minutes: Int) {
+        val am = context.getSystemService(AlarmManager::class.java)
+        val at = System.currentTimeMillis() + minutes * 60_000L
+        val op = pending(context, id, title)
+        runCatching {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S || am.canScheduleExactAlarms()) {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, op)
+            } else {
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, op)
+            }
+        }
+    }
+
     fun cancel(context: Context, id: Long) {
         val am = context.getSystemService(AlarmManager::class.java)
         am.cancel(pending(context, id, null))
@@ -90,6 +104,20 @@ class ReminderReceiver : BroadcastReceiver() {
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
                 )
+                val done = PendingIntent.getBroadcast(
+                    app,
+                    4_000_000 + (id % 1_000_000).toInt(),
+                    Intent(app, ReminderActionReceiver::class.java).setAction(ReminderActionReceiver.ACTION_DONE)
+                        .putExtra("id", id).putExtra("title", title),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                )
+                val snooze = PendingIntent.getBroadcast(
+                    app,
+                    5_000_000 + (id % 1_000_000).toInt(),
+                    Intent(app, ReminderActionReceiver::class.java).setAction(ReminderActionReceiver.ACTION_SNOOZE)
+                        .putExtra("id", id).putExtra("title", title),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                )
                 val n = NotificationCompat.Builder(app, LifeApp.CHANNEL_REMINDER)
                     .setSmallIcon(R.drawable.ic_notification)
                     .setContentTitle("Напоминание")
@@ -100,6 +128,8 @@ class ReminderReceiver : BroadcastReceiver() {
                     .setDefaults(NotificationCompat.DEFAULT_ALL)
                     .setContentIntent(open)
                     .setAutoCancel(true)
+                    .addAction(0, "Готово", done)
+                    .addAction(0, "Через 10 минут", snooze)
                     .apply {
                         if (hide) {
                             setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
@@ -114,6 +144,8 @@ class ReminderReceiver : BroadcastReceiver() {
                     }
                     .build()
                 runCatching { NotificationManagerCompat.from(app).notify(3000 + (id % 1000).toInt(), n) }
+                // Второе, «необычное» напоминание: окно на весь экран со звонком, чтобы точно не пропустить
+                if (c.settings.current().loudReminders) ReminderAlarm.show(app, id, title, hide)
             } finally {
                 pending.finish()
             }

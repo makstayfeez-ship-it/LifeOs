@@ -148,14 +148,10 @@ fun AppNav(vm: AppViewModel) {
                 composable("morning_settings") { MorningSettingsScreen(vm, back) }
 
                 composable("theme") { ThemeScreen(vm, back) }
-                composable("extras") { ExtrasScreen(vm, back) }
                 composable("navbar") { NavbarSettingsScreen(vm, back) }
                 composable("goals") { GoalsScreen(vm, back) }
-                composable("security") { SecurityScreen(vm, back) }
                 composable("widgets") { WidgetsScreen(back) }
                 composable("account") { AccountScreen(vm, back) }
-                composable("notif_settings") { NotificationsSettingsScreen(vm, back) }
-                composable("privacy") { PrivacyScreen(back) { go("security") } }
             }
         }
 

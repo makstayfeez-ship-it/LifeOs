@@ -129,7 +129,7 @@ fun AssistantChatScreen(vm: AppViewModel, onBack: () -> Unit, onSettings: () -> 
             listening = true
             mood = RobotMood.LISTENING
             scope.launch {
-                when (val r = listener.listen(accurate = true) { input = it }) {
+                when (val r = listener.listen(accurate = true, onPartial = { input = it })) {
                     is SpeechResult.Heard -> {
                         input = ""
                         listening = false
@@ -334,6 +334,40 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () ->
         )
         PillButton("Позвать сейчас", { callNow() }, Modifier.padding(top = 8.dp), outlined = true)
 
+        SectionTitle("Тихий режим: писать помощнику")
+        Text(
+            "Помощник может не говорить, а переписываться: внизу экрана появляется строка, куда вы пишете вопрос или просьбу, " +
+                "можно прикрепить фото, снимок с камеры, PDF, Word или текстовый файл. Ответ приходит текстом. " +
+                "Он ищет в интернете и помогает со всем: учёба и домашние задания, тексты, переводы, советы, дела в телефоне.",
+            color = GrayText,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        PillButton("Открыть окно для текста", { com.lifeos.app.assistant.TextAssist.open(context) }, Modifier.fillMaxWidth(), outlined = true)
+        SwitchRow(
+            "Кнопка питания открывает строку вместо голоса",
+            s.assistTextMode,
+            { on -> vm.update { it.copy(assistTextMode = on) } },
+            subtitle = "Работает, когда LifeOS выбран помощником по умолчанию (удержание кнопки питания). Тогда помощник не говорит, а ждёт ваш текст.",
+        )
+        Text(
+            "Вызов жестом, как у системных помощников:\n" +
+                "1. Включите доступ ниже («Помощник видит экран и управляет им»): там же включается и этот жест.\n" +
+                "2. Откройте Настройки → Специальные возможности → «Кнопка специальных возможностей» (или «Жест»), выберите LifeOS помощник.\n" +
+                "3. Проведите двумя пальцами вверх от нижнего края экрана (при навигации жестами) или нажмите значок в панели навигации. " +
+                "Если выбрано несколько служб, появится список, нажмите в нём LifeOS помощник.\n" +
+                "Ещё открыть можно плиткой «Написать помощнику» в шторке, ярлыком на иконке приложения и кнопкой «Поделиться» в галерее.",
+            color = GrayText,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        PillButton(
+            "Открыть настройки специальных возможностей",
+            { context.startActivity(Perms.accessibilitySettings()) },
+            Modifier.padding(top = 8.dp),
+            outlined = true,
+        )
+
         SectionTitle("Разрешения для робота")
         PermissionRow(
             "Поверх других приложений",
@@ -382,6 +416,7 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () ->
                 "• «открой Телеграм», «позвони маме», «напиши Ивану привет»\n" +
                 "• «включи фонарик», «громче», «следующий трек», «пауза»\n" +
                 "• «проложи маршрут до вокзала», «найди в интернете рецепт борща», «сфотографируй»\n" +
+                "• вопросы про свежее и точное («какой курс доллара», «что нового в…»): ИИ сам ищет в интернете и читает сайты\n" +
                 "• «открой настройки Wi-Fi» (сам переключатель Android включать не даёт, откроет нужный экран)\n" +
                 "• «назад», «домой», «последние приложения», «шторка», «заблокируй экран» (нужен пункт «Робот видит экран»)\n" +
                 "• «который час», «сколько заряда», «какая погода», «что у меня сегодня», «прочитай заметки»\n" +

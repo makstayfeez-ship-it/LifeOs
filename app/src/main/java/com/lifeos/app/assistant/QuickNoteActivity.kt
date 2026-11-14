@@ -43,7 +43,7 @@ class QuickNoteActivity : ComponentActivity() {
         setContent {
             val settings by container.settings.flow.collectAsState(initial = AppSettings())
             LifeTheme(settings.accent) {
-                var status by remember { mutableStateOf("Говорите заметку…") }
+                var status by remember { mutableStateOf("Включаю микрофон…") }
                 var partial by remember { mutableStateOf("") }
 
                 LaunchedEffect(Unit) {
@@ -53,24 +53,36 @@ class QuickNoteActivity : ComponentActivity() {
                         finish()
                         return@LaunchedEffect
                     }
-                    Beeps.start()
-                    status = "Говорите заметку… Скажите «остановить», чтобы сохранить"
-                    val text = Dictation.record(listener, container.settings.current().googleDictation) { partial = it }
-                    if (text.isBlank()) {
-                        status = "Ничего не услышано"
-                    } else {
-                        partial = text
-                        val now = Calendar.getInstance()
-                        // «Купить молоко» → покупки, «завтра в 10 позвонить» → задача, иначе просто заметка
-                        status = executor.quickCapture(
-                            text,
-                            container.settings.current(),
-                            now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE),
-                        )
-                        WidgetUpdater.refresh(this@QuickNoteActivity)
-                        Beeps.done()
+                    status = "Включаю микрофон…"
+                    // Фоновое ожидание «LifeOS» отпускает микрофон, чтобы записи никто не мешал
+                    MicArbiter.enter()
+                    try {
+                        val text = Dictation.record(
+                            listener,
+                            container.settings.current().googleDictation,
+                            onReady = {
+                                Beeps.ready()
+                                status = "Говорите заметку… Скажите «остановить», чтобы сохранить"
+                            },
+                        ) { partial = it }
+                        if (text.isBlank()) {
+                            status = "Ничего не услышано. Нажмите на плитку ещё раз и говорите ближе к микрофону"
+                        } else {
+                            partial = text
+                            val now = Calendar.getInstance()
+                            // «Купить молоко» → покупки, «завтра в 10 позвонить» → задача, иначе просто заметка
+                            status = executor.quickCapture(
+                                text,
+                                container.settings.current(),
+                                now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE),
+                            )
+                            WidgetUpdater.refresh(this@QuickNoteActivity)
+                            Beeps.done()
+                        }
+                        delay(1400)
+                    } finally {
+                        MicArbiter.leave()
                     }
-                    delay(1400)
                     finish()
                 }
 

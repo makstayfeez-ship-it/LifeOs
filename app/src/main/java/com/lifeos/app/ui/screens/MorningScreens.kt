@@ -96,8 +96,8 @@ fun MorningScreen(vm: AppViewModel, onBack: () -> Unit, onSettings: () -> Unit) 
         if (b.habitsTotal != null && b.habitsTotal > 0) {
             BriefCard(Icons.Rounded.Loop, "Привычки", listOf("Сегодня ${b.habitsDone} из ${b.habitsTotal}"))
         }
-        if (b.goalTitle != null && b.goalProgress != null) {
-            BriefCard(Icons.Rounded.Flag, "Цель на год", listOf("${b.goalTitle}: ${b.goalProgress}%"))
+        if (b.goalTitle != null) {
+            BriefCard(Icons.Rounded.Flag, "Цель на год", listOf(if (b.goalProgress != null) "${b.goalTitle}: ${b.goalProgress}%" else b.goalTitle))
         }
 
         Row(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

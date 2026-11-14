@@ -59,6 +59,13 @@ class LifeApp : Application() {
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_REMINDER, "Напоминания", NotificationManager.IMPORTANCE_HIGH),
         )
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_ALARM, "Громкое напоминание на весь экран", NotificationManager.IMPORTANCE_HIGH).apply {
+                setSound(null, null)
+                enableVibration(false)
+                setShowBadge(false)
+            },
+        )
         // Тихий, но «важный» канал: только он позволяет открыть утренний обзор на весь экран поверх блокировки
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_BRIEF_LOCK, "Утренний обзор на экране", NotificationManager.IMPORTANCE_HIGH).apply {
@@ -74,6 +81,7 @@ class LifeApp : Application() {
         const val CHANNEL_ASSISTANT = "assistant"
         const val CHANNEL_BRIEF = "brief"
         const val CHANNEL_BRIEF_LOCK = "brief_lock"
+        const val CHANNEL_ALARM = "reminder_alarm"
     }
 }
 

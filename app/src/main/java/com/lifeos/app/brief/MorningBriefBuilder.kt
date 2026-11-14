@@ -28,7 +28,7 @@ data class Brief(
         if (tasks.isNotEmpty()) add("Задачи: " + tasks.joinToString("; "))
         spentYesterday?.let { add("Расходы вчера: $it ₽") }
         if (habitsTotal != null && habitsTotal > 0) add("Привычки: сегодня $habitsDone из $habitsTotal")
-        if (goalTitle != null && goalProgress != null) add("Цель «$goalTitle»: $goalProgress%")
+        if (goalTitle != null) add(if (goalProgress != null) "Цель «$goalTitle»: $goalProgress%" else "Цель на год: $goalTitle")
     }
 
     /** Текст для озвучки. */
@@ -42,7 +42,7 @@ data class Brief(
         if (events.isEmpty() && tasks.isEmpty()) parts += "На сегодня дел нет."
         spentYesterday?.let { parts += "Вчера потрачено $it рублей." }
         if (habitsTotal != null && habitsTotal > 0) parts += "Привычек на сегодня: $habitsTotal."
-        if (goalTitle != null && goalProgress != null) parts += "Цель «$goalTitle» выполнена на $goalProgress процентов."
+        if (goalTitle != null) parts += if (goalProgress != null) "Цель «$goalTitle» выполнена на $goalProgress процентов." else "Ваша цель на год: $goalTitle."
         return parts.joinToString(" ")
     }
 }
@@ -97,7 +97,7 @@ class MorningBriefBuilder(private val container: AppContainer) {
 
         // Цель года: берём первую незавершённую, у которой задана сумма (по ней считается процент)
         val goal = if (s.briefGoal) {
-            com.lifeos.app.data.GoalsCodec.decode(s.goalsJson).firstOrNull { it.result == 0 && it.hasTarget }
+            com.lifeos.app.data.GoalsCodec.decode(s.goalsJson).firstOrNull { it.result == 0 }
         } else null
 
         return Brief(
@@ -110,7 +110,7 @@ class MorningBriefBuilder(private val container: AppContainer) {
             habitsDone = habitsDone,
             habitsTotal = habitsTotal,
             goalTitle = goal?.title,
-            goalProgress = goal?.percent,
+            goalProgress = goal?.takeIf { it.hasTarget }?.percent,
         )
     }
 }

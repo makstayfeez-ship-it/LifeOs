@@ -1,4 +1,4 @@
-import worker, { toOpenAI, fromOpenAI } from "./worker.js";
+import worker, { toOpenAI, fromOpenAI, countImages, pickModel } from "./worker.js";
 import assert from "node:assert/strict";
 
 // 1. перевод запроса с вызовом инструмента и результатом
@@ -120,8 +120,50 @@ const paid = calls.find((c) => c.url.includes("anthropic"));
 assert.equal(paid.init.headers["x-api-key"], "sk-ant-x");
 const sent = JSON.parse(paid.init.body);
 assert.equal(sent.model, "claude-haiku-5-5");
-assert.equal(sent.max_tokens, 1500, "потолок токенов");
+assert.equal(sent.max_tokens, 3000, "потолок токенов");
 assert.equal((await askF(envF)).status, 200);
 assert.equal((await askF(envF)).status, 429, "потолок платных запросов в сутки");
 assert.equal((await askF({ UPSTREAM_KEY: "gsk" })).status, 429, "без запасного ключа отказ остаётся отказом");
 console.log("OK fallback");
+
+// ---------- фото и PDF ----------
+const pic = { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "QUJD" } };
+const visionReq = { system: "s", messages: [{ role: "user", content: [pic, pic, { type: "text", text: "Что на фото?" }] }] };
+assert.equal(countImages(visionReq), 2);
+assert.equal(countImages({ messages: [{ role: "user", content: "текст" }] }), 0);
+const ov = toOpenAI(visionReq, "m");
+const parts = ov.messages[1].content;
+assert.equal(parts.length, 3);
+assert.deepEqual(parts[0], { type: "image_url", image_url: { url: "data:image/jpeg;base64,QUJD" } });
+assert.deepEqual(parts[2], { type: "text", text: "Что на фото?" });
+const noText = toOpenAI({ messages: [{ role: "user", content: [pic] }] }, "m");
+assert.equal(noText.messages[0].content[1].text, "Посмотри на изображение.");
+const many = toOpenAI({ messages: [{ role: "user", content: [pic, pic, pic, pic, pic, pic, pic] }] }, "m");
+assert.equal(many.messages[0].content.filter((p) => p.type === "image_url").length, 5, "не больше 5 картинок");
+// результат инструмента и картинка в одном сообщении: сначала результат, потом картинка
+const mixed = toOpenAI({ messages: [{ role: "user", content: [{ type: "tool_result", tool_use_id: "t", content: "ок" }, pic, { type: "text", text: "а это?" }] }] }, "m");
+assert.equal(mixed.messages[0].role, "tool");
+assert.equal(mixed.messages[1].role, "user");
+
+assert.equal(pickModel({}, false), "openai/gpt-oss-120b");
+assert.equal(pickModel({}, true), "meta-llama/llama-4-scout-17b-16e-instruct", "Groq: модель с глазами");
+assert.equal(pickModel({ VISION_MODEL: "v" }, true), "v");
+assert.equal(pickModel({ UPSTREAM_URL: "https://x.example/v1/chat", MODEL: "gemini" }, true), "gemini", "другой провайдер: та же модель");
+
+let seenModel;
+globalThis.fetch = async (url, init) => {
+  seenModel = JSON.parse(init.body).model;
+  return new Response(JSON.stringify({ id: "x", choices: [{ message: { content: "Кошка" } }] }), { status: 200 });
+};
+const visionCall = (body) => worker.fetch(new Request("https://r.example/v1/messages", { method: "POST", headers: { "x-device-id": "v" + Math.random() }, body: JSON.stringify(body) }), { UPSTREAM_KEY: "k" });
+let rv = await visionCall(visionReq);
+assert.equal(rv.status, 200);
+assert.equal(seenModel, "meta-llama/llama-4-scout-17b-16e-instruct");
+assert.equal((await rv.json()).content[0].text, "Кошка");
+await visionCall({ messages: [{ role: "user", content: "привет" }] });
+assert.equal(seenModel, "openai/gpt-oss-120b", "без картинок обычная модель");
+const big = { messages: [{ role: "user", content: "я".repeat(130_000) }] };
+assert.equal((await visionCall(big)).status, 413, "длинный текст без картинок отклоняется");
+const bigPic = { messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: "A".repeat(500_000) } }, { type: "text", text: "?" }] }] };
+assert.equal((await visionCall(bigPic)).status, 200, "картинка на полмегабайта проходит");
+console.log("OK vision");

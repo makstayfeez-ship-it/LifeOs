@@ -13,6 +13,17 @@
             android:targetPackage="com.lifeos.app" />
     </shortcut>
     <shortcut
+        android:shortcutId="ask_text"
+        android:enabled="true"
+        android:icon="@drawable/ic_notification"
+        android:shortcutShortLabel="@string/shortcut_ask"
+        android:shortcutLongLabel="@string/shortcut_ask_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="com.lifeos.app.assistant.TextAssistActivity"
+            android:targetPackage="com.lifeos.app" />
+    </shortcut>
+    <shortcut
         android:shortcutId="morning"
         android:enabled="true"
         android:icon="@drawable/ic_notification"

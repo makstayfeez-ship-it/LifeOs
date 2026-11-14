@@ -14,6 +14,19 @@ object Beeps {
 
     suspend fun start() = play(ToneGenerator.TONE_PROP_BEEP, 150)
 
+    /** Короткий сигнал «микрофон включён, говорите»: не ждёт окончания, чтобы не съесть начало фразы. */
+    fun ready() {
+        if (!enabled) return
+        Thread {
+            runCatching {
+                val g = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80)
+                g.startTone(ToneGenerator.TONE_PROP_BEEP, 120)
+                Thread.sleep(300)
+                g.release()
+            }
+        }.start()
+    }
+
     suspend fun done() {
         play(ToneGenerator.TONE_PROP_ACK, 200)
     }
@@ -39,6 +52,8 @@ class DictationSession(
     private val accurate: Boolean = false,
     private val idleMs: Long = 40_000,
     private val maxMs: Long = 600_000,
+    /** Вызывается один раз, когда микрофон правда включился (для сигнала «говорите»). */
+    private val onReady: () -> Unit = {},
 ) {
     private val parts = mutableListOf<String>()
 
@@ -50,11 +65,22 @@ class DictationSession(
         val started = SystemClock.elapsedRealtime()
         var lastSpeech = started
         var errors = 0
+        var readyFired = false
         while (currentCoroutineContext().isActive &&
             SystemClock.elapsedRealtime() - started < maxMs &&
             SystemClock.elapsedRealtime() - lastSpeech < idleMs
         ) {
-            when (val r = listener.listen(accurate) { partial -> onChange((text + " " + partial).trim()) }) {
+            val r = listener.listen(
+                accurate,
+                onPartial = { partial -> onChange((text + " " + partial).trim()) },
+                onReady = {
+                    if (!readyFired) {
+                        readyFired = true
+                        onReady()
+                    }
+                },
+            )
+            when (r) {
                 is SpeechResult.Heard -> {
                     errors = 0
                     lastSpeech = SystemClock.elapsedRealtime()
@@ -98,9 +124,10 @@ object Dictation {
     suspend fun record(
         listener: SpeechListener,
         accurate: Boolean = false,
+        onReady: () -> Unit = {},
         onPartial: (String) -> Unit = {},
     ): String {
-        val d = DictationSession(listener, accurate)
+        val d = DictationSession(listener, accurate, onReady = onReady)
         d.run(onPartial)
         return d.text
     }

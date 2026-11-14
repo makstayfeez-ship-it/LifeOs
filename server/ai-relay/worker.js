@@ -12,6 +12,8 @@
 //   FIREBASE_PROJECT_ID  необязательно: идентификатор проекта Firebase. Тогда ИИ получают только вошедшие в аккаунт
 //                  пользователи, а лимит считается на каждый аккаунт (проверяется подпись входа Google)
 //   USER_DAILY_LIMIT     запросов в сутки на один аккаунт, по умолчанию 25
+//   VISION_MODEL   модель для запросов с фото и страницами PDF. Для Groq по умолчанию meta-llama/llama-4-scout-17b-16e-instruct,
+//                  для других провайдеров по умолчанию та же MODEL (она должна уметь читать картинки)
 //   FALLBACK_KEY   необязательно: платный ключ Claude (console.anthropic.com). Включается только когда бесплатный провайдер
 //                  отказал (лимит кончился или сбой), поэтому платите только за то, что не влезло в бесплатное
 //   FALLBACK_MODEL модель для запасного ключа, по умолчанию claude-haiku-5-5 (дешёвая и быстрая)
@@ -21,7 +23,10 @@
 const DEFAULT_URL = "https://api.groq.com/openai/v1/chat/completions";
 const DEFAULT_MODEL = "openai/gpt-oss-120b";
 const MAX_BODY = 120_000;
-const MAX_TOKENS = 1500;
+const MAX_BODY_IMAGES = 6_000_000; // с фото тело больше: каждая картинка около 200–400 КБ в base64
+const MAX_TOKENS = 3000;
+const GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+const MAX_IMAGES = 5; // Groq принимает до 5 картинок в запросе
 
 const hits = new Map(); // мягкий лимит в памяти: у каждого экземпляра Worker свой счётчик
 
@@ -54,12 +59,14 @@ export default {
     }
 
     const raw = await request.text();
-    if (raw.length > MAX_BODY) return json({ error: "too_large" }, 413);
+    if (raw.length > MAX_BODY_IMAGES) return json({ error: "too_large" }, 413);
     let body;
     try { body = JSON.parse(raw); } catch { return json({ error: "bad_json" }, 400); }
+    const images = countImages(body);
+    if (images === 0 && raw.length > MAX_BODY) return json({ error: "too_large" }, 413);
 
     const kind = (env.UPSTREAM_KIND || "openai").toLowerCase();
-    const model = env.MODEL || DEFAULT_MODEL;
+    const model = pickModel(env, images > 0);
     let primary;
     try {
       primary = kind === "anthropic" ? await viaAnthropic(body, env.UPSTREAM_KEY, env.UPSTREAM_URL, model) : await viaOpenAI(body, env, model);
@@ -76,6 +83,25 @@ export default {
     return primary;
   },
 };
+
+/** Сколько картинок (фото, страницы PDF) в запросе. */
+export function countImages(body) {
+  let n = 0;
+  for (const m of body?.messages || []) {
+    if (!Array.isArray(m.content)) continue;
+    for (const b of m.content) if (b && b.type === "image") n++;
+  }
+  return n;
+}
+
+/** Для запросов с картинками нужна модель, которая умеет их читать. */
+export function pickModel(env, withImages) {
+  const base = env.MODEL || DEFAULT_MODEL;
+  if (!withImages) return base;
+  if (env.VISION_MODEL) return env.VISION_MODEL;
+  const url = env.UPSTREAM_URL || DEFAULT_URL;
+  return /groq\.com/.test(url) ? GROQ_VISION_MODEL : base;
+}
 
 function allow(key, limit) {
   const now = Date.now();
@@ -194,7 +220,16 @@ export function toOpenAI(body, model) {
         messages.push({ role: "tool", tool_call_id: b.tool_use_id, content: c });
       }
       const textParts = blocks.filter((b) => b.type === "text").map((b) => b.text).join("");
-      if (textParts) messages.push({ role: "user", content: textParts });
+      const pics = blocks.filter((b) => b.type === "image" && b.source?.type === "base64" && b.source.data);
+      if (pics.length) {
+        const parts = pics.slice(0, MAX_IMAGES).map((b) => ({
+          type: "image_url", image_url: { url: `data:${b.source.media_type || "image/jpeg"};base64,${b.source.data}` },
+        }));
+        parts.push({ type: "text", text: textParts || "Посмотри на изображение." });
+        messages.push({ role: "user", content: parts });
+      } else if (textParts) {
+        messages.push({ role: "user", content: textParts });
+      }
     }
   }
   const out = { model, messages, max_tokens: Math.min(body.max_tokens || 1024, MAX_TOKENS), temperature: 0.4 };

@@ -191,56 +191,59 @@ private fun PadKey(onClick: () -> Unit, visible: Boolean, filled: Boolean = fals
 
 @Composable
 fun SecurityScreen(vm: AppViewModel, onBack: () -> Unit) {
+    LifeScreen("Безопасность", onBack = onBack) { SecuritySection(vm) }
+}
+
+/** Содержимое «Безопасности»: его же показывает раздел «Аккаунт». */
+@Composable
+fun SecuritySection(vm: AppViewModel) {
     val s by vm.settings.collectAsState()
     val context = LocalContext.current
     val bioAvailable = remember { Biometrics.available(context) }
     // 0 — ничего, 1 — задать PIN, 2 — спросить PIN, чтобы выключить, 3 — спросить PIN перед сменой, 4 — новый PIN
     var dialog by remember { mutableIntStateOf(0) }
 
-    LifeScreen("Безопасность", onBack = onBack) {
-        SectionTitle("Блокировка приложения")
+    SectionTitle("Блокировка приложения")
+    SwitchRow(
+        "PIN-код при входе",
+        s.lockEnabled,
+        { on -> dialog = if (on) 1 else 2 },
+        subtitle = "LifeOS закрывается PIN-кодом, когда вы возвращаетесь в него после перерыва больше 10 секунд.",
+    )
+    if (s.lockEnabled) {
         SwitchRow(
-            "PIN-код при входе",
-            s.lockEnabled,
-            { on -> dialog = if (on) 1 else 2 },
-            subtitle = "LifeOS закрывается PIN-кодом, когда вы возвращаетесь в него после перерыва больше 10 секунд.",
+            "Отпечаток пальца или лицо",
+            s.biometric && bioAvailable,
+            { on -> if (bioAvailable) vm.update { it.copy(biometric = on) } },
+            subtitle = if (bioAvailable) "Вход без ввода PIN-кода. PIN остаётся запасным способом."
+            else "На телефоне не настроен отпечаток или лицо. Добавьте их в настройках Android.",
         )
-        if (s.lockEnabled) {
-            SwitchRow(
-                "Отпечаток пальца или лицо",
-                s.biometric && bioAvailable,
-                { on -> if (bioAvailable) vm.update { it.copy(biometric = on) } },
-                subtitle = if (bioAvailable) "Вход без ввода PIN-кода. PIN остаётся запасным способом."
-                else "На телефоне не настроен отпечаток или лицо. Добавьте их в настройках Android.",
-            )
-            PillButton("Сменить PIN-код", { dialog = 3 }, Modifier.padding(top = 8.dp), outlined = true)
-        }
+        PillButton("Сменить PIN-код", { dialog = 3 }, Modifier.padding(top = 8.dp), outlined = true)
+    }
 
-        SectionTitle("Защита данных")
-        SwitchRow(
-            "Запретить скриншоты",
-            s.secureScreen,
-            { on -> vm.update { it.copy(secureScreen = on) } },
-            subtitle = "Содержимое LifeOS не попадёт на скриншот и скроется в списке последних приложений.",
-        )
-        SwitchRow(
-            "Скрывать уведомления на экране блокировки",
-            s.hideLockNotifs,
-            { on -> vm.update { it.copy(hideLockNotifs = on) } },
-            subtitle = "Утренний обзор и виджеты не покажут дела и суммы, пока телефон заблокирован.",
-        )
+    SectionTitle("Защита данных")
+    SwitchRow(
+        "Запретить скриншоты",
+        s.secureScreen,
+        { on -> vm.update { it.copy(secureScreen = on) } },
+        subtitle = "Содержимое LifeOS не попадёт на скриншот и скроется в списке последних приложений.",
+    )
+    SwitchRow(
+        "Скрывать уведомления на экране блокировки",
+        s.hideLockNotifs,
+        { on -> vm.update { it.copy(hideLockNotifs = on) } },
+        subtitle = "Утренний обзор и виджеты не покажут дела и суммы, пока телефон заблокирован.",
+    )
 
-        SectionTitle("Как всё защищено")
-        InfoCard(Modifier.fillMaxWidth()) {
-            Text(
-                "• PIN-код хранится только как хэш PBKDF2 с солью, сам PIN нигде не записывается.\n" +
-                    "• Ключ ИИ хранится только на телефоне и не уходит в облако.\n" +
-                    "• Если PIN забыт, выйдите из аккаунта и войдите снова: блокировка сбросится.",
-                color = GrayText,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-        Box(Modifier.size(24.dp))
+    SectionTitle("Как всё защищено")
+    InfoCard(Modifier.fillMaxWidth()) {
+        Text(
+            "• PIN-код хранится только как хэш PBKDF2 с солью, сам PIN нигде не записывается.\n" +
+                "• Ключ ИИ хранится только на телефоне и не уходит в облако.\n" +
+                "• Если PIN забыт, выйдите из аккаунта и войдите снова: блокировка сбросится.",
+            color = GrayText,
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
 
     when (dialog) {

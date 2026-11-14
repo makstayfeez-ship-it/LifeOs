@@ -130,6 +130,22 @@ object CommandParser {
         return m.groupValues[1].trim()
     }
 
+    private val reminderTriggerRx = Regex(
+        "^(?:напомни|напомнить|напоминание|новое напоминание|быстрое напоминание|" +
+            "(?:поставь|создай|сделай|добавь)\\s+(?:мне\\s+)?напоминани\\p{L}*)" +
+            "(?:\\s+мне)?(?:[\\s,:-]+(?:на\\s+)?(.+))?$",
+    )
+
+    /**
+     * «Напомни завтра в 15:00 сходить к стоматологу» без обращения к помощнику: так открывается карточка напоминания.
+     * Возвращает остаток фразы (пустой, если сказано только «напомни») или null, если это не такая фраза.
+     */
+    fun reminderTrigger(raw: String): String? {
+        val t = normalize(raw)
+        val m = reminderTriggerRx.find(t) ?: return null
+        return m.groupValues[1].trim()
+    }
+
     fun parse(raw: String, nowMinutes: Int, today: java.time.LocalDate = java.time.LocalDate.now()): Command {
         val orig = raw.trim()
         val t = normalize(raw)

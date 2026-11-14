@@ -88,16 +88,11 @@ fun ProfileScreen(vm: AppViewModel, go: (String) -> Unit) {
         )
 
         ProfileRow("Аккаунт", Icons.Rounded.Person) { go("account") }
-        ProfileRow("Уведомления", Icons.Rounded.Notifications) { go("notif_settings") }
-        ProfileRow("Конфиденциальность", Icons.Rounded.PrivacyTip) { go("privacy") }
-        ProfileRow("Безопасность", Icons.Rounded.Lock) { go("security") }
         ProfileRow("Нижнее меню", Icons.Rounded.Apps) { go("navbar") }
         ProfileRow("Виджеты", Icons.Rounded.Widgets) { go("widgets") }
         ProfileRow("Настройки помощника", Icons.Rounded.AutoAwesome) { go("assistant_settings") }
-        ProfileRow("Утренний обзор", Icons.Rounded.WbSunny) { go("morning_settings") }
         ProfileRow("Магазин роботов", Icons.Rounded.Storefront) { go("shop") }
         ProfileRow("Оформление", Icons.Rounded.Palette) { go("theme") }
-        ProfileRow("Дополнительно", Icons.Rounded.Settings) { go("extras") }
     }
 }
 
@@ -181,49 +176,55 @@ fun ThemeScreen(vm: AppViewModel, onBack: () -> Unit) {
     }
 }
 
+/** Облако: сохранить данные сейчас или загрузить из аккаунта. Показывается в разделе «Аккаунт». */
 @Composable
-fun ExtrasScreen(vm: AppViewModel, onBack: () -> Unit) {
+fun CloudSection(vm: AppViewModel) {
     val user by vm.user.collectAsState()
     var message by remember { mutableStateOf<String?>(null) }
+    val cloud = user?.cloud == true
+
+    SectionTitle("Облако")
+    InfoCard(Modifier.fillMaxWidth()) {
+        Text(
+            if (cloud) "Ваши данные сохраняются в облаке автоматически через несколько секунд после изменения."
+            else "Облако не подключено: данные хранятся только на этом телефоне. Чтобы они сохранялись в аккаунте, подключите Firebase (см. README).",
+            color = GrayText,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+    if (cloud) {
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            PillButton("Сохранить сейчас", { vm.backupNow { message = it } }, Modifier.weight(1f), outlined = true)
+            PillButton("Загрузить", { vm.restoreNow { message = it } }, Modifier.weight(1f), outlined = true)
+        }
+    }
+    message?.let { Text(it, color = LocalAccent.current, modifier = Modifier.padding(top = 10.dp)) }
+    val last = vm.settings.collectAsState().value.lastBackup
+    Text(
+        if (last > 0) "Последнее сохранение: " + com.lifeos.app.ui.Fmt.dateTime(last) else "Сохранений в облаке ещё не было",
+        color = GrayText,
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.padding(top = 8.dp),
+    )
+}
+
+/** Выход из аккаунта и сведения о приложении. */
+@Composable
+fun ExitSection(vm: AppViewModel) {
+    val user by vm.user.collectAsState()
     var confirmExit by remember { mutableStateOf(false) }
     val cloud = user?.cloud == true
 
-    LifeScreen("Дополнительно", onBack = onBack) {
-        SectionTitle("Облако")
-        InfoCard(Modifier.fillMaxWidth()) {
-            Text(
-                if (cloud) "Ваши данные сохраняются в облаке автоматически через несколько секунд после изменения."
-                else "Облако не подключено: данные хранятся только на этом телефоне. Чтобы они сохранялись в аккаунте, подключите Firebase (см. README).",
-                color = GrayText,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-        if (cloud) {
-            Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                PillButton("Сохранить сейчас", { vm.backupNow { message = it } }, Modifier.weight(1f), outlined = true)
-                PillButton("Загрузить", { vm.restoreNow { message = it } }, Modifier.weight(1f), outlined = true)
-            }
-        }
-        message?.let { Text(it, color = LocalAccent.current, modifier = Modifier.padding(top = 10.dp)) }
-        val last = vm.settings.collectAsState().value.lastBackup
-        Text(
-            if (last > 0) "Последнее сохранение: " + com.lifeos.app.ui.Fmt.dateTime(last) else "Сохранений в облаке ещё не было",
-            color = GrayText,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(top = 8.dp),
-        )
+    SectionTitle("Выход")
+    PillButton("Выйти из аккаунта", { confirmExit = true }, Modifier.fillMaxWidth())
 
-        SectionTitle("Аккаунт")
-        PillButton("Выйти из аккаунта", { confirmExit = true }, Modifier.fillMaxWidth())
-
-        SectionTitle("О приложении")
-        Text("LifeOS 0.1.0", color = Snow)
-        Text(
-            "Помощник, заметки голосом, дела, финансы и привычки в одном приложении.",
-            color = GrayText,
-            style = MaterialTheme.typography.bodySmall,
-        )
-    }
+    SectionTitle("О приложении")
+    Text("LifeOS 0.3", color = Snow)
+    Text(
+        "Помощник, заметки голосом, дела, финансы и привычки в одном приложении.",
+        color = GrayText,
+        style = MaterialTheme.typography.bodySmall,
+    )
 
     if (confirmExit) {
         FormDialog(
