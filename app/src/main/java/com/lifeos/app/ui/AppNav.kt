@@ -34,7 +34,6 @@ import com.lifeos.app.ui.screens.AssistantCheckScreen
 import com.lifeos.app.ui.screens.AssistantSettingsScreen
 import com.lifeos.app.ui.screens.AuthScreen
 import com.lifeos.app.ui.screens.CalendarScreen
-import com.lifeos.app.ui.screens.ExtrasScreen
 import com.lifeos.app.ui.screens.FinanceScreen
 import com.lifeos.app.ui.screens.HabitsScreen
 import com.lifeos.app.ui.screens.HomeScreen
@@ -45,8 +44,6 @@ import com.lifeos.app.ui.screens.GoalsScreen
 import com.lifeos.app.ui.screens.NavbarSettingsScreen
 import com.lifeos.app.ui.screens.LockScreen
 import com.lifeos.app.ui.screens.NotesScreen
-import com.lifeos.app.ui.screens.NotificationsSettingsScreen
-import com.lifeos.app.ui.screens.PrivacyScreen
 import com.lifeos.app.ui.screens.SecurityScreen
 import com.lifeos.app.ui.screens.WidgetsScreen
 import com.lifeos.app.ui.screens.ProfileScreen
