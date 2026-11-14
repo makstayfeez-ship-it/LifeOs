@@ -85,7 +85,7 @@ class RobotOverlay(private val context: Context) {
     var onTap: () -> Unit = {}
 
     private var skin by mutableStateOf<RobotSkin>(SkinCatalog.default)
-    private var mood by mutableStateOf(RobotMood.HAPPY)
+    private var currentMood by mutableStateOf(RobotMood.HAPPY)
     private var bubble by mutableStateOf<String?>(null)
     private var walking by mutableStateOf(false)
     private var facingRight by mutableStateOf(true)
@@ -145,7 +145,7 @@ class RobotOverlay(private val context: Context) {
     }
 
     fun setMood(m: RobotMood) {
-        mood = m
+        currentMood = m
     }
 
     /** Показывает реплику над роботом. null — убрать. */
@@ -320,7 +320,7 @@ class RobotOverlay(private val context: Context) {
             }
             RobotView(
                 skin = skin,
-                mood = mood,
+                mood = currentMood,
                 walking = walking,
                 facingRight = facingRight,
                 modifier = Modifier
@@ -331,7 +331,7 @@ class RobotOverlay(private val context: Context) {
     }
 
     /** Окну вне Activity нужен свой «жизненный цикл», иначе Compose не запустится. */
-    private class OverlayOwner : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
+    internal class OverlayOwner : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
         private val registry = LifecycleRegistry(this)
         private val controller = SavedStateRegistryController.create(this)
         private val store = ViewModelStore()

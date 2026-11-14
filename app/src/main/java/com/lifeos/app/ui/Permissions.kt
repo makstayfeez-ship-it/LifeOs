@@ -38,10 +38,47 @@ object Perms {
         return enabled.split(':').any { it.equals(me, ignoreCase = true) }
     }
 
+    fun has(context: Context, permission: String): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(context, permission) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    /** Доступ к контактам и звонкам: нужен для «позвони маме» и «напиши Ивану». */
+    fun hasContacts(context: Context): Boolean = has(context, android.Manifest.permission.READ_CONTACTS)
+
+    fun hasCall(context: Context): Boolean = has(context, android.Manifest.permission.CALL_PHONE)
+
     fun overlaySettings(context: Context) = Intent(
         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
         Uri.parse("package:${context.packageName}"),
     ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    /** Сведения о приложении: там в меню ⋮ включается «Разрешить ограниченные настройки». */
+    fun appDetailsSettings(context: Context) = Intent(
+        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        Uri.parse("package:${context.packageName}"),
+    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    fun notificationListenerSettings() =
+        Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    /** Разрешено ли показывать окно на весь экран поверх блокировки (Android 14+ спрашивает это отдельно). */
+    fun canFullScreenIntent(context: Context): Boolean =
+        Build.VERSION.SDK_INT < 34 ||
+            context.getSystemService(android.app.NotificationManager::class.java).canUseFullScreenIntent()
+
+    fun fullScreenIntentSettings(context: Context): Intent =
+        if (Build.VERSION.SDK_INT >= 34) {
+            Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:${context.packageName}"))
+        } else {
+            appDetailsSettings(context)
+        }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    /** Снято ли ограничение батареи с приложения (иначе система может усыпить помощника и напоминания). */
+    fun batteryUnrestricted(context: Context): Boolean =
+        runCatching { context.getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName) }
+            .getOrDefault(false)
+
+    fun batterySettings() = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     fun accessibilitySettings() = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
@@ -81,4 +118,11 @@ fun rememberResumeTick(): Int {
         onDispose { owner.lifecycle.removeObserver(obs) }
     }
     return tick
+}
+
+/** Запрашивает сразу несколько разрешений Android; [onResult] вызывается, когда пользователь ответил. */
+@Composable
+fun rememberPermissionsRequest(permissions: Array<String>, onResult: () -> Unit = {}): () -> Unit {
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { onResult() }
+    return { launcher.launch(permissions) }
 }

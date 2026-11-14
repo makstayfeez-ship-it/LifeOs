@@ -72,9 +72,18 @@ class MorningBriefReceiver : BroadcastReceiver() {
                 // Следующий запуск ставим сразу, чтобы сбой в сборке сводки не оборвал расписание
                 BriefScheduler.schedule(app, s.morningHour, s.morningMinute)
 
+                // Сначала отмечаем, что обзор готов, и запускаем «слушателя» экрана: дальше всё работает, даже если сводка не соберётся
+                if (s.briefOnLock) {
+                    MorningState.markPending(app, resetShown = true)
+                    MorningWatchService.start(app)
+                }
+
                 val name = c.auth.user.value?.name.orEmpty()
-                val brief = withTimeoutOrNull(8_000) { c.brief.build(name, s) } ?: return@launch
-                notify(app, brief)
+                // Если погода не успела загрузиться, показываем обзор без неё, чем остаться вовсе без уведомления
+                val brief = withTimeoutOrNull(6_000) { c.brief.build(name, s) }
+                    ?: runCatching { c.brief.build(name, s.copy(briefWeather = false)) }.getOrNull()
+                    ?: return@launch
+                notify(app, brief, s.hideLockNotifs)
                 if (s.speakBrief) c.tts.speak(brief.spoken(), s)
             } finally {
                 pending.finish()
@@ -82,7 +91,7 @@ class MorningBriefReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun notify(context: Context, brief: Brief) {
+    private fun notify(context: Context, brief: Brief, hideOnLock: Boolean) {
         val open = PendingIntent.getActivity(
             context,
             0,
@@ -99,6 +108,19 @@ class MorningBriefReceiver : BroadcastReceiver() {
             .setStyle(NotificationCompat.BigTextStyle().bigText(lines.joinToString("\n")))
             .setContentIntent(open)
             .setAutoCancel(true)
+            .apply {
+                if (hideOnLock) {
+                    // На заблокированном экране вместо дел и сумм показывается нейтральный текст
+                    setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                    setPublicVersion(
+                        NotificationCompat.Builder(context, LifeApp.CHANNEL_BRIEF)
+                            .setSmallIcon(R.drawable.ic_notification)
+                            .setContentTitle("Утренний обзор")
+                            .setContentText("Разблокируйте телефон, чтобы посмотреть")
+                            .build(),
+                    )
+                }
+            }
             .build()
         runCatching { NotificationManagerCompat.from(context).notify(2001, n) }
     }
@@ -113,6 +135,24 @@ class BootReceiver : BroadcastReceiver() {
             try {
                 val s = app.container.settings.current()
                 if (s.morningEnabled) BriefScheduler.schedule(app, s.morningHour, s.morningMinute)
+                // После перезагрузки обзор мог остаться непоказанным: снова ждём включения экрана
+                if (s.morningEnabled && s.briefOnLock && MorningState.shouldShow(app)) MorningWatchService.start(app)
+                com.lifeos.app.reminder.ReminderScheduler.rescheduleAll(app)
+                // Android не даёт запускать микрофон сам после перезагрузки: просим одно касание, чтобы помощник снова слушал
+                if (s.wakeEnabled && intent.action == Intent.ACTION_BOOT_COMPLETED) {
+                    val open = PendingIntent.getActivity(
+                        app, 20, Intent(app, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                    )
+                    val n = NotificationCompat.Builder(app, LifeApp.CHANNEL_ASSISTANT)
+                        .setSmallIcon(R.drawable.ic_notification)
+                        .setContentTitle("Включить помощника LifeOS")
+                        .setContentText("Телефон перезагружался. Нажмите, чтобы помощник снова слушал")
+                        .setContentIntent(open)
+                        .setAutoCancel(true)
+                        .build()
+                    runCatching { NotificationManagerCompat.from(app).notify(2002, n) }
+                }
             } finally {
                 pending.finish()
             }

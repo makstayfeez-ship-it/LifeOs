@@ -48,6 +48,8 @@ fun AuthScreen(vm: AppViewModel) {
     var password by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    var checking by remember { mutableStateOf(false) }
+    var report by remember { mutableStateOf<List<com.lifeos.app.data.NetCheck.Row>?>(null) }
 
     val cloud = vm.c.auth.cloudAvailable
     val valid = email.contains("@") && password.length >= 6 && (!register || name.isNotBlank())
@@ -124,6 +126,63 @@ fun AuthScreen(vm: AppViewModel) {
                 }
                 .padding(8.dp),
         )
+        if (cloud) {
+            Text(
+                if (checking) "Проверяю связь…" else "Не входит без VPN? Проверить связь",
+                color = Snow,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .clickable(enabled = !checking) {
+                        checking = true
+                        report = null
+                        vm.checkNetwork { rows ->
+                            report = rows
+                            checking = false
+                        }
+                    }
+                    .padding(8.dp),
+            )
+            report?.let { rows ->
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(CardColor)
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    rows.forEach { r ->
+                        Text(
+                            (if (r.ok) "✓ " else "✗ ") + r.title + ": " + r.detail,
+                            color = if (r.ok) Snow else LocalAccent.current,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Text(
+                        com.lifeos.app.data.NetCheck.verdict(rows),
+                        color = GrayText,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
+            }
+            Text(
+                "Пользоваться без облака (без VPN)",
+                color = LocalAccent.current,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .clickable { vm.continueOffline(name) }
+                    .padding(8.dp),
+            )
+            Text(
+                "Данные будут только на этом телефоне, ИИ по аккаунту и синхронизация не работают. Позже можно зарегистрироваться и перенести данные в облако. " +
+                    "Вход в уже существующий аккаунт заменит данные на телефоне данными из облака.",
+                color = GrayText,
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 8.dp),
+            )
+        }
         if (!register && cloud) {
             Text(
                 "Забыли пароль?",

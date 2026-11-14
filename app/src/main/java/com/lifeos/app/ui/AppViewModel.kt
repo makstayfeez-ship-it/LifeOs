@@ -1,6 +1,7 @@
 package com.lifeos.app.ui
 
 import android.app.Application
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lifeos.app.AppContainer
@@ -9,18 +10,24 @@ import com.lifeos.app.assistant.AssistantControl
 import com.lifeos.app.assistant.Command
 import com.lifeos.app.assistant.CommandExecutor
 import com.lifeos.app.assistant.CommandParser
+import com.lifeos.app.audio.VoiceRecorder
 import com.lifeos.app.brief.Brief
 import com.lifeos.app.brief.BriefScheduler
 import com.lifeos.app.data.AppSettings
-import com.lifeos.app.data.DocumentEntity
 import com.lifeos.app.data.ExpenseEntity
+import com.lifeos.app.data.Goal
+import com.lifeos.app.data.GoalsCodec
 import com.lifeos.app.data.HabitEntity
+import com.lifeos.app.data.HabitMeta
+import com.lifeos.app.data.HabitMetaCodec
 import com.lifeos.app.data.HabitLogEntity
 import com.lifeos.app.data.NoteEntity
 import com.lifeos.app.data.RobotSkin
 import com.lifeos.app.data.ShoppingEntity
 import com.lifeos.app.data.TaskEntity
 import com.lifeos.app.data.toRussian
+import com.lifeos.app.reminder.ReminderScheduler
+import com.lifeos.app.widget.WidgetUpdater
 import java.time.LocalDate
 import java.util.Calendar
 import kotlinx.coroutines.Job
@@ -48,7 +55,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val shopping = c.dao.shopping().state(emptyList())
     val habits = c.dao.habits().state(emptyList())
     val habitLogs = c.dao.habitLogs().state(emptyList())
-    val documents = c.dao.documents().state(emptyList())
+
+    // ---------- блокировка ----------
+
+    /** Пока настройки не прочитаны, приложение считается закрытым; если PIN не включён, замок сразу снимается. */
+    val locked = MutableStateFlow(true)
+    private var leftAt = 0L
+
+    init {
+        viewModelScope.launch { locked.value = c.settings.current().lockEnabled }
+    }
+
+    fun unlock() {
+        locked.value = false
+    }
+
+    fun onAppStopped() {
+        leftAt = SystemClock.elapsedRealtime()
+    }
+
+    /** Возврат в приложение: если отсутствовали дольше LOCK_DELAY_MS, снова просим PIN. */
+    fun onAppStarted() {
+        if (leftAt != 0L && settings.value.lockEnabled && SystemClock.elapsedRealtime() - leftAt > LOCK_DELAY_MS) {
+            locked.value = true
+        }
+    }
 
     /** Куда открыть приложение по нажатию на уведомление. */
     val pendingRoute = MutableStateFlow<String?>(null)
@@ -59,6 +90,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** После любого изменения данные через несколько секунд уходят в облако (если вошли в облачный аккаунт). */
     private fun changed() {
+        WidgetUpdater.refresh(getApplication())
         if (c.auth.user.value?.cloud != true) return
         backupJob?.cancel()
         backupJob = viewModelScope.launch {
@@ -85,10 +117,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 .onSuccess {
                     if (c.auth.user.value?.cloud == true) {
                         // Вход: подтягиваем сохранённое. Регистрация: сразу сохраняем то, что уже есть.
-                        if (register) changed() else c.sync.restore()
+                        if (register) changed() else {
+                            c.sync.restore()
+                            ReminderScheduler.rescheduleAll(getApplication())
+                        }
                     }
                     done(null)
                 }
+                .onFailure { done(it.toRussian()) }
+        }
+    }
+
+    fun continueOffline(name: String) = c.auth.continueOffline(name.trim())
+
+    fun checkNetwork(done: (List<com.lifeos.app.data.NetCheck.Row>) -> Unit) {
+        viewModelScope.launch {
+            val relay = com.lifeos.app.assistant.AiAgent.relayBase(c.settings.current())
+            val extra = if (relay != null) listOf("Сервер ИИ LifeOS" to relay) else emptyList()
+            done(com.lifeos.app.data.NetCheck.run(extra))
+        }
+    }
+
+    fun updateName(name: String, done: (String) -> Unit) {
+        viewModelScope.launch {
+            c.auth.updateName(name.trim())
+                .onSuccess { done("Имя сохранено") }
                 .onFailure { done(it.toRussian()) }
         }
     }
@@ -123,7 +176,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun restoreNow(done: (String) -> Unit) {
         viewModelScope.launch {
             c.sync.restore()
-                .onSuccess { found -> done(if (found) "Данные загружены из облака" else "В облаке пока нет копии") }
+                .onSuccess { found ->
+                    ReminderScheduler.rescheduleAll(getApplication())
+                    done(if (found) "Данные загружены из облака" else "В облаке пока нет копии") }
                 .onFailure { done(it.toRussian()) }
         }
     }
@@ -131,16 +186,33 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- данные ----------
 
     fun addNote(text: String) = io { c.dao.insertNote(NoteEntity(text = text)) }
-    fun deleteNote(n: NoteEntity) = io { c.dao.deleteNote(n) }
+    fun addVoiceNote(text: String, audioPath: String) =
+        io { c.dao.insertNote(NoteEntity(text = text, isVoice = true, audioPath = audioPath)) }
 
-    fun addTask(title: String, epochDay: Long, timeMinutes: Int?, isEvent: Boolean) =
-        io { c.dao.insertTask(TaskEntity(title = title, epochDay = epochDay, timeMinutes = timeMinutes, isEvent = isEvent)) }
+    fun deleteNote(n: NoteEntity) = io {
+        VoiceRecorder.delete(getApplication(), n.audioPath)
+        c.dao.deleteNote(n)
+    }
 
-    fun toggleTask(t: TaskEntity) = io { c.dao.updateTask(t.copy(done = !t.done)) }
-    fun deleteTask(t: TaskEntity) = io { c.dao.deleteTask(t) }
+    fun addTask(title: String, epochDay: Long, timeMinutes: Int?, isEvent: Boolean) = io {
+        val task = TaskEntity(title = title, epochDay = epochDay, timeMinutes = timeMinutes, isEvent = isEvent)
+        val id = c.dao.insertTask(task)
+        ReminderScheduler.schedule(getApplication(), task.copy(id = id))
+    }
 
-    fun addExpense(title: String, category: String, amount: Long) =
-        io { c.dao.insertExpense(ExpenseEntity(title = title, category = category, amountRub = amount)) }
+    fun toggleTask(t: TaskEntity) = io {
+        val updated = t.copy(done = !t.done)
+        c.dao.updateTask(updated)
+        ReminderScheduler.schedule(getApplication(), updated)
+    }
+
+    fun deleteTask(t: TaskEntity) = io {
+        ReminderScheduler.cancel(getApplication(), t.id)
+        c.dao.deleteTask(t)
+    }
+
+    fun addExpense(title: String, category: String, amount: Long, income: Boolean = false) =
+        io { c.dao.insertExpense(ExpenseEntity(title = title, category = category, amountRub = amount, income = income)) }
 
     fun deleteExpense(e: ExpenseEntity) = io { c.dao.deleteExpense(e) }
 
@@ -151,18 +223,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addHabit(title: String) = io { c.dao.insertHabit(HabitEntity(title = title)) }
 
+    /** Привычка с планом: значок, сколько раз в неделю и на какой срок (0 — без срока). */
+    fun addHabitPlan(title: String, emoji: String, perWeek: Int, durationDays: Int) = io {
+        val id = c.dao.insertHabit(HabitEntity(title = title))
+        c.settings.update {
+            val map = HabitMetaCodec.decode(it.habitMetaJson) + (id to HabitMeta(emoji, perWeek, LocalDate.now().toEpochDay(), durationDays))
+            it.copy(habitMetaJson = HabitMetaCodec.encode(map))
+        }
+    }
+
     fun deleteHabit(h: HabitEntity) = io {
         c.dao.deleteLogsFor(h.id)
         c.dao.deleteHabit(h)
+        c.settings.update { it.copy(habitMetaJson = HabitMetaCodec.encode(HabitMetaCodec.decode(it.habitMetaJson) - h.id)) }
+    }
+
+    /** Изменить список целей года (добавить, отметить прогресс, подвести итог). */
+    fun saveGoals(block: (List<Goal>) -> List<Goal>) = io {
+        c.settings.update { it.copy(goalsJson = GoalsCodec.encode(block(GoalsCodec.decode(it.goalsJson)))) }
     }
 
     fun toggleHabitToday(h: HabitEntity, doneNow: Boolean) = io {
         val log = HabitLogEntity(h.id, LocalDate.now().toEpochDay())
         if (doneNow) c.dao.deleteHabitLog(log) else c.dao.insertHabitLog(log)
     }
-
-    fun addDocument(title: String, category: String) = io { c.dao.insertDocument(DocumentEntity(title = title, category = category)) }
-    fun deleteDocument(d: DocumentEntity) = io { c.dao.deleteDocument(d) }
 
     // ---------- настройки ----------
 
@@ -233,5 +317,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openRoute(route: String?) {
         pendingRoute.value = route
+    }
+
+    companion object {
+        private const val LOCK_DELAY_MS = 10_000L
     }
 }

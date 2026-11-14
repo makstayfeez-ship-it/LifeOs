@@ -19,7 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.lifeos.app.container
 import com.lifeos.app.data.AppSettings
-import com.lifeos.app.data.NoteEntity
+import com.lifeos.app.widget.WidgetUpdater
+import java.util.Calendar
 import com.lifeos.app.ui.components.InfoCard
 import com.lifeos.app.ui.theme.GrayText
 import com.lifeos.app.ui.theme.LifeTheme
@@ -28,11 +29,13 @@ import com.lifeos.app.ui.theme.Snow
 import kotlinx.coroutines.delay
 
 /**
- * Быстрая голосовая заметка без входа в приложение: открывается из плитки в шторке
- * (в том числе поверх экрана блокировки), слушает одну фразу, сохраняет и закрывается.
+ * Мгновенная запись без входа в приложение. Открывается из виджета, плитки в шторке, ярлыка на иконке
+ * или кнопки в уведомлении (в том числе поверх экрана блокировки), слушает одну фразу, сохраняет и закрывается.
+ * Понимает «купить молоко», «завтра в 10 позвонить врачу», «потратил 300 на кофе», «будильник на 7»; остальное пишет заметкой.
  */
 class QuickNoteActivity : ComponentActivity() {
     private lateinit var listener: SpeechListener
+    private val executor by lazy { CommandExecutor(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,7 +43,7 @@ class QuickNoteActivity : ComponentActivity() {
         setContent {
             val settings by container.settings.flow.collectAsState(initial = AppSettings())
             LifeTheme(settings.accent) {
-                var status by remember { mutableStateOf("Говорите заметку…") }
+                var status by remember { mutableStateOf("Включаю микрофон…") }
                 var partial by remember { mutableStateOf("") }
 
                 LaunchedEffect(Unit) {
@@ -50,16 +53,36 @@ class QuickNoteActivity : ComponentActivity() {
                         finish()
                         return@LaunchedEffect
                     }
-                    when (val r = listener.listen { partial = it }) {
-                        is SpeechResult.Heard -> {
-                            container.dao.insertNote(NoteEntity(text = r.text.trim(), isVoice = true))
-                            partial = r.text.trim()
-                            status = "Записано"
+                    status = "Включаю микрофон…"
+                    // Фоновое ожидание «LifeOS» отпускает микрофон, чтобы записи никто не мешал
+                    MicArbiter.enter()
+                    try {
+                        val text = Dictation.record(
+                            listener,
+                            container.settings.current().googleDictation,
+                            onReady = {
+                                Beeps.ready()
+                                status = "Говорите заметку… Скажите «остановить», чтобы сохранить"
+                            },
+                        ) { partial = it }
+                        if (text.isBlank()) {
+                            status = "Ничего не услышано. Нажмите на плитку ещё раз и говорите ближе к микрофону"
+                        } else {
+                            partial = text
+                            val now = Calendar.getInstance()
+                            // «Купить молоко» → покупки, «завтра в 10 позвонить» → задача, иначе просто заметка
+                            status = executor.quickCapture(
+                                text,
+                                container.settings.current(),
+                                now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE),
+                            )
+                            WidgetUpdater.refresh(this@QuickNoteActivity)
+                            Beeps.done()
                         }
-                        SpeechResult.Silence -> status = "Ничего не услышала"
-                        is SpeechResult.Error -> status = "Не получилось записать"
+                        delay(1400)
+                    } finally {
+                        MicArbiter.leave()
                     }
-                    delay(1400)
                     finish()
                 }
 

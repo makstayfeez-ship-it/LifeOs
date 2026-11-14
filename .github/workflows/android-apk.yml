@@ -2,6 +2,9 @@ name: Build LifeOS APK
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
@@ -20,6 +23,8 @@ jobs:
   build:
     name: Build debug APK
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -30,13 +35,38 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Accept Android SDK licenses (SDK is preinstalled on the runner)
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
+      # Облако (вход в аккаунт, синхронизация, ИИ по аккаунту): содержимое google-services.json хранится в секрете GOOGLE_SERVICES_JSON
+      - name: Firebase config (optional)
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -f ci/fake-firebase ]; then
+            cp ci/fake-google-services.json app/google-services.json
+            echo "Проверочная сборка с фальшивым Firebase (не публикуется)"
+          elif [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > "$RUNNER_TEMP/gs.json"
+            echo "Секрет: ${#GOOGLE_SERVICES_JSON} символов, первый символ '${GOOGLE_SERVICES_JSON:0:1}', последний '${GOOGLE_SERVICES_JSON: -1}'"
+            if pid=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert any(c['client_info']['android_client_info']['package_name']=='com.lifeos.app' for c in d['client']); print(d['project_info']['project_id'])" "$RUNNER_TEMP/gs.json"); then
+              cp "$RUNNER_TEMP/gs.json" app/google-services.json
+              echo "Firebase подключён, проект: $pid"
+            else
+              echo "::warning::Секрет GOOGLE_SERVICES_JSON неполный или не от пакета com.lifeos.app: сборка пойдёт без облака. Вставьте в секрет весь текст файла от { до }."
+            fi
+          else
+            echo "Firebase не настроен: приложение соберётся в локальном режиме"
+          fi
+
       - name: Build APK
+        env:
+          # Необязательно: адрес бесплатного сервера ИИ (Settings → Secrets and variables → Actions → Variables)
+          AI_RELAY_URL: ${{ vars.AI_RELAY_URL }}
+          AI_RELAY_TOKEN: ${{ vars.AI_RELAY_TOKEN }}
         run: ./gradlew --no-daemon assembleDebug
 
       - name: Upload APK
@@ -46,3 +76,52 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
+
+      # Русская модель речи (около 45 МБ): один раз выкладываем на Releases, оттуда её скачивает приложение
+      - name: Mirror speech model to Releases (once)
+        if: ${{ hashFiles('ci/fake-firebase') == '' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view vosk-model-ru > /dev/null 2>&1; then
+            curl -fL --retry 3 -o vosk-model-small-ru-0.22.zip https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip
+            sha="${{ github.event.pull_request.head.sha || github.sha }}"
+            gh release create vosk-model-ru vosk-model-small-ru-0.22.zip \
+              --title "Русская модель речи (Vosk)" \
+              --notes "Модель для офлайн-распознавания (лицензия Apache 2.0, проект Vosk). Приложение скачивает её само." \
+              --target "$sha" --latest=false
+          fi
+
+      # ИИ-модель для телефона (1,6 ГБ, Qwen 2.5, Apache 2.0): один раз зеркалим на Releases, оттуда её скачивает приложение
+      - name: Mirror on-device AI model to Releases (once)
+        if: ${{ hashFiles('ci/fake-firebase') == '' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view llm-model-qwen > /dev/null 2>&1; then
+            f=Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm
+            curl -fL --retry 3 -o "$f" "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/$f"
+            size=$(stat -c %s "$f"); echo "Размер модели: $size байт"
+            test "$size" -gt 1400000000
+            sha="${{ github.event.pull_request.head.sha || github.sha }}"
+            gh release create llm-model-qwen "$f" \
+              --title "ИИ-модель для телефона (Qwen 2.5 1.5B)" \
+              --notes "Открытая модель Qwen 2.5 (лицензия Apache 2.0) в формате LiteRT-LM для запасного ИИ без интернета. Приложение скачивает её само." \
+              --target "$sha" --latest=false
+          fi
+
+      # Готовый APK кладём на страницу Releases: его скачивают одним нажатием, без архива
+      - name: Publish APK to Releases
+        if: ${{ hashFiles('ci/fake-firebase') == '' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk LifeOS.apk
+          sha="${{ github.event.pull_request.head.sha || github.sha }}"
+          gh release create "build-${{ github.run_number }}" LifeOS.apk \
+            --title "LifeOS, сборка ${{ github.run_number }}" \
+            --notes "Готовый APK. Скачайте LifeOS.apk, откройте на телефоне и установите поверх старой версии." \
+            --target "$sha" --latest

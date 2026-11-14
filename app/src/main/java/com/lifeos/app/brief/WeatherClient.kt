@@ -42,8 +42,8 @@ class WeatherClient {
 
     private fun getJson(url: String): JSONObject {
         val conn = URL(url).openConnection() as HttpURLConnection
-        conn.connectTimeout = 6_000
-        conn.readTimeout = 6_000
+        conn.connectTimeout = 4_000
+        conn.readTimeout = 4_000
         try {
             if (conn.responseCode !in 200..299) error("HTTP ${conn.responseCode}")
             return JSONObject(conn.inputStream.bufferedReader().use { it.readText() })

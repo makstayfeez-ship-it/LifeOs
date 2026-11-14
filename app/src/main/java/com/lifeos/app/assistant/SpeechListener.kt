@@ -1,15 +1,29 @@
 package com.lifeos.app.assistant
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.os.SystemClock
+import androidx.core.content.ContextCompat
 import kotlin.coroutines.resume
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import org.vosk.Recognizer
 
 sealed interface SpeechResult {
     data class Heard(val text: String) : SpeechResult
@@ -20,8 +34,7 @@ sealed interface SpeechResult {
     data class Error(val code: Int) : SpeechResult {
         /** Без этого дальше слушать бессмысленно. */
         val fatal: Boolean
-            get() = code == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ||
-                code == SpeechRecognizer.ERROR_CLIENT
+            get() = code == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS || code == SpeechListener.NO_RECOGNIZER
     }
 }
 
@@ -30,28 +43,151 @@ class SpeechListener(private val context: Context) {
     private val main = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
 
-    fun available(): Boolean = SpeechRecognizer.isRecognitionAvailable(context)
+    private fun googleAvailable(): Boolean = SpeechRecognizer.isRecognitionAvailable(context)
 
-    /** Слушает одну фразу. Отмена корутины останавливает распознавание. */
-    suspend fun listen(onPartial: (String) -> Unit = {}): SpeechResult =
+    /** Есть ли хоть один способ распознать речь: офлайн-модель или служба Google. */
+    fun available(): Boolean = VoskModel.isReady(context) || googleAvailable()
+
+    /** Слушает одну фразу офлайн-движком, когда модель скачана (нужно для вечного слушания: без писков и интернета). */
+    val offline: Boolean get() = VoskModel.isReady(context)
+
+    /**
+     * Слушает одну фразу. Отмена корутины останавливает распознавание.
+     * Для постоянного ожидания «LifeOS» берётся офлайн-движок, если он есть. Для диктовки ([accurate]) лучше Google,
+     * а если он не работает, слушает офлайн-движок.
+     */
+    suspend fun listen(
+        accurate: Boolean = false,
+        onPartial: (String) -> Unit = {},
+        onReady: () -> Unit = {},
+        idleMs: Long = NO_SPEECH_MS,
+    ): SpeechResult {
+        val vosk = VoskModel.isReady(context)
+        val google = googleAvailable()
+        return when {
+            vosk && (!accurate || !google) -> listenOffline(onPartial, onReady, idleMs)
+            google -> {
+                val r = listenGoogle(onPartial, onReady)
+                if (r is SpeechResult.Error && vosk) listenOffline(onPartial, onReady, idleMs) else r
+            }
+            else -> {
+                AssistantStatus.error("Нечем распознавать речь: скачайте офлайн-распознавание в «Проверке помощника» или установите приложение Google")
+                SpeechResult.Error(NO_RECOGNIZER)
+            }
+        }
+    }
+
+    /** Офлайн-распознавание Vosk: пишет звук с микрофона и ждёт конца фразы. Ничего не пищит и не требует интернета. */
+    private suspend fun listenOffline(onPartial: (String) -> Unit, onReady: () -> Unit, idleMs: Long): SpeechResult = withContext(Dispatchers.IO) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            return@withContext SpeechResult.Error(SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS)
+        }
+        val model = VoskModel.model(context) ?: return@withContext SpeechResult.Error(NO_RECOGNIZER)
+        val rate = 16_000
+        val chunk = rate / 5
+        val minBuf = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        val rec = runCatching {
+            AudioRecord(
+                MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                rate,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                maxOf(minBuf, chunk * 2) * 2,
+            )
+        }.getOrNull()
+        if (rec == null || rec.state != AudioRecord.STATE_INITIALIZED) {
+            rec?.release()
+            return@withContext SpeechResult.Error(SpeechRecognizer.ERROR_AUDIO)
+        }
+        val recognizer = runCatching { Recognizer(model, rate.toFloat()) }.getOrNull()
+        if (recognizer == null) {
+            rec.release()
+            return@withContext SpeechResult.Error(NO_RECOGNIZER)
+        }
+        try {
+            rec.startRecording()
+            // Микрофон занят другим приложением или закрыт системой: запись не началась
+            if (rec.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                AssistantStatus.error(MIC_BLOCKED)
+                return@withContext SpeechResult.Error(SpeechRecognizer.ERROR_AUDIO)
+            }
+            val buf = ShortArray(chunk)
+            val started = SystemClock.elapsedRealtime()
+            var spoke = false
+            var lastPartial = ""
+            var signal = false
+            var announced = false
+            while (isActive) {
+                val n = rec.read(buf, 0, buf.size)
+                if (n < 0) return@withContext SpeechResult.Error(SpeechRecognizer.ERROR_AUDIO)
+                if (n == 0) continue
+                // Первый кусок звука получен: микрофон правда слушает, можно сказать «говорите»
+                if (!announced) {
+                    announced = true
+                    onReady()
+                }
+                if (!signal) {
+                    for (i in 0 until n) if (buf[i].toInt() != 0) { signal = true; break }
+                }
+                // Чистая тишина в несколько секунд подряд: Android не отдаёт звук (микрофон занят голосовым помощником
+                // телефона или приложению ограничили фон). Лучше сказать об этом, чем молча «не слышать».
+                if (!signal && SystemClock.elapsedRealtime() - started > DEAD_MIC_MS) {
+                    AssistantStatus.error(MIC_BLOCKED)
+                    return@withContext SpeechResult.Error(SpeechRecognizer.ERROR_AUDIO)
+                }
+                if (recognizer.acceptWaveForm(buf, n)) {
+                    val text = JSONObject(recognizer.result).optString("text").trim()
+                    return@withContext if (text.isBlank()) SpeechResult.Silence else SpeechResult.Heard(text)
+                }
+                val partial = runCatching { JSONObject(recognizer.partialResult).optString("partial").trim() }.getOrDefault("")
+                if (partial.isNotBlank()) {
+                    spoke = true
+                    if (partial != lastPartial) {
+                        lastPartial = partial
+                        onPartial(partial)
+                    }
+                }
+                val elapsed = SystemClock.elapsedRealtime() - started
+                // Молчат: возвращаем тишину, чтобы цикл мог проверить, не пора ли остановиться
+                if (!spoke && elapsed > idleMs) return@withContext SpeechResult.Silence
+                // Слишком длинная фраза: забираем то, что успели услышать
+                if (elapsed > MAX_UTTERANCE_MS) {
+                    val text = JSONObject(recognizer.finalResult).optString("text").trim()
+                    return@withContext if (text.isBlank()) SpeechResult.Silence else SpeechResult.Heard(text)
+                }
+            }
+            SpeechResult.Silence
+        } catch (e: Exception) {
+            SpeechResult.Error(SpeechRecognizer.ERROR_CLIENT)
+        } finally {
+            runCatching { rec.stop() }
+            rec.release()
+            runCatching { recognizer.close() }
+        }
+    }
+
+    private suspend fun listenGoogle(onPartial: (String) -> Unit, onReady: () -> Unit): SpeechResult =
         suspendCancellableCoroutine { cont ->
             main.post {
                 if (!cont.isActive) return@post
                 releaseNow()
-                if (!available()) {
-                    cont.resume(SpeechResult.Error(SpeechRecognizer.ERROR_CLIENT))
+                if (!googleAvailable()) {
+                    AssistantStatus.error("На телефоне нет службы распознавания речи. Скачайте офлайн-распознавание в «Проверке помощника»")
+                    cont.resume(SpeechResult.Error(NO_RECOGNIZER))
                     return@post
                 }
                 val r = SpeechRecognizer.createSpeechRecognizer(context)
                 recognizer = r
 
                 fun finish(result: SpeechResult) {
+                    // Звук возвращаем до того, как помощник заговорит, иначе начало ответа можно не услышать
+                    SpeechMuter.restore(context)
                     if (cont.isActive) cont.resume(result)
                     main.post { if (recognizer === r) releaseNow() }
                 }
 
                 r.setRecognitionListener(object : RecognitionListener {
-                    override fun onReadyForSpeech(params: Bundle?) = Unit
+                    override fun onReadyForSpeech(params: Bundle?) = onReady()
                     override fun onBeginningOfSpeech() = Unit
                     override fun onRmsChanged(rmsdB: Float) = Unit
                     override fun onBufferReceived(buffer: ByteArray?) = Unit
@@ -84,9 +220,9 @@ class SpeechListener(private val context: Context) {
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
                     putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                     putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-                    putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
                     putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
                 }
+                SpeechMuter.mute(context)
                 r.startListening(intent)
             }
             cont.invokeOnCancellation { main.post { releaseNow() } }
@@ -96,11 +232,48 @@ class SpeechListener(private val context: Context) {
         main.post { releaseNow() }
     }
 
+    companion object {
+        /** Нашего собственного кода: на телефоне нет службы распознавания. Дальше слушать бессмысленно. */
+        const val NO_RECOGNIZER = -100
+        private const val NO_SPEECH_MS = 8_000L
+        private const val MAX_UTTERANCE_MS = 25_000L
+        private const val DEAD_MIC_MS = 2_500L
+        private const val MIC_BLOCKED =
+            "Android не отдаёт звук с микрофона: он занят другим приложением (например, голосовым помощником телефона) " +
+                "или приложению ограничили работу в фоне. Выключите вызов другого помощника голосом и откройте LifeOS заново"
+    }
+
     private fun releaseNow() {
+        SpeechMuter.restore(context)
         recognizer?.let {
             runCatching { it.cancel() }
             runCatching { it.destroy() }
         }
         recognizer = null
+    }
+}
+
+/**
+ * Кто сейчас пользуется микрофоном. Пока идёт запись заметки или разговор в отдельном окне, фоновое ожидание «LifeOS»
+ * молчит и отпускает микрофон: два слушателя одновременно мешают друг другу, и один из них «глохнет».
+ */
+object MicArbiter {
+    private val users = kotlinx.coroutines.flow.MutableStateFlow(0)
+
+    /** true, пока кто-то записывает голос в отдельном окне. */
+    val busy: kotlinx.coroutines.flow.Flow<Boolean> =
+        users.map { it > 0 }.distinctUntilChanged()
+
+    val isBusy: Boolean get() = users.value > 0
+
+    /** Занимает микрофон и даёт фоновому слушателю короткую паузу, чтобы отпустить его. */
+    suspend fun enter() {
+        val first = users.value == 0
+        users.value = users.value + 1
+        if (first) kotlinx.coroutines.delay(350)
+    }
+
+    fun leave() {
+        users.value = maxOf(0, users.value - 1)
     }
 }

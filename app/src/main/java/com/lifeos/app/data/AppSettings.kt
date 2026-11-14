@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -26,7 +27,7 @@ data class AppSettings(
     val customPitch: Float = 1f,
     val customRate: Float = 1f,
     val customVoiceName: String = "",
-    val wakeEnabled: Boolean = false,
+    val wakeEnabled: Boolean = true,
     val robotEnabled: Boolean = true,
     val apiKey: String = "",
     // Роботы
@@ -46,10 +47,38 @@ data class AppSettings(
     val briefSpending: Boolean = true,
     val briefHabits: Boolean = true,
     val briefGoal: Boolean = true,
+    val briefOnLock: Boolean = true,
+    val recordBeeps: Boolean = true,
+    val googleWake: Boolean = false,
+    val googleDictation: Boolean = false,
+    /** Свой адрес сервера ИИ (необязательно, заменяет встроенный). */
+    val relayUrl: String = "",
+    /** Всегда отвечать моделью в телефоне (без интернета и без лимитов), а не облачным ИИ. */
+    val localAiAlways: Boolean = false,
+    /** Громкое напоминание на весь экран кроме обычного уведомления. */
+    val loudReminders: Boolean = true,
+    /** Что помощник помнит о пользователе: по одному факту в строке. */
+    val memory: String = "",
+    val muteRecognizerBeep: Boolean = true,
     val speakBrief: Boolean = true,
     // Цель месяца
     val goalTitle: String = "Улучшить форму",
     val goalProgress: Int = 0,
+    // Безопасность
+    val lockEnabled: Boolean = false,
+    val pinSalt: String = "",
+    val pinHash: String = "",
+    val biometric: Boolean = false,
+    val secureScreen: Boolean = false,
+    val hideLockNotifs: Boolean = false,
+    // Оформление и синхронизация
+    val glow: Boolean = true,
+    val autoFinance: Boolean = true,
+    // Цели года и планы привычек (JSON), нижнее меню (маршруты через запятую)
+    val goalsJson: String = "[]",
+    val habitMetaJson: String = "{}",
+    val navItems: String = "home,apps,reminders,profile",
+    val lastBackup: Long = 0L,
 )
 
 private val Context.settingsStore by preferencesDataStore(name = "lifeos_settings")
@@ -79,9 +108,30 @@ private object K {
     val briefSpending = booleanPreferencesKey("brief_spending")
     val briefHabits = booleanPreferencesKey("brief_habits")
     val briefGoal = booleanPreferencesKey("brief_goal")
+    val briefOnLock = booleanPreferencesKey("brief_on_lock")
+    val recordBeeps = booleanPreferencesKey("record_beeps")
+    val googleWake = booleanPreferencesKey("google_wake")
+    val googleDictation = booleanPreferencesKey("google_dictation")
+    val relayUrl = stringPreferencesKey("relay_url")
+    val localAiAlways = booleanPreferencesKey("local_ai_always")
+    val loudReminders = booleanPreferencesKey("loud_reminders")
+    val memory = stringPreferencesKey("assistant_memory")
+    val muteRecognizerBeep = booleanPreferencesKey("mute_recognizer_beep")
     val speakBrief = booleanPreferencesKey("speak_brief")
     val goalTitle = stringPreferencesKey("goal_title")
     val goalProgress = intPreferencesKey("goal_progress")
+    val lockEnabled = booleanPreferencesKey("lock_enabled")
+    val pinSalt = stringPreferencesKey("pin_salt")
+    val pinHash = stringPreferencesKey("pin_hash")
+    val biometric = booleanPreferencesKey("biometric")
+    val secureScreen = booleanPreferencesKey("secure_screen")
+    val hideLockNotifs = booleanPreferencesKey("hide_lock_notifs")
+    val glow = booleanPreferencesKey("glow")
+    val autoFinance = booleanPreferencesKey("auto_finance")
+    val goalsJson = stringPreferencesKey("goals_json")
+    val habitMetaJson = stringPreferencesKey("habit_meta_json")
+    val navItems = stringPreferencesKey("nav_items")
+    val lastBackup = longPreferencesKey("last_backup")
 }
 
 private fun Preferences.toSettings(): AppSettings {
@@ -111,9 +161,30 @@ private fun Preferences.toSettings(): AppSettings {
         briefSpending = this[K.briefSpending] ?: d.briefSpending,
         briefHabits = this[K.briefHabits] ?: d.briefHabits,
         briefGoal = this[K.briefGoal] ?: d.briefGoal,
+        briefOnLock = this[K.briefOnLock] ?: d.briefOnLock,
+        recordBeeps = this[K.recordBeeps] ?: d.recordBeeps,
+        googleWake = this[K.googleWake] ?: d.googleWake,
+        googleDictation = this[K.googleDictation] ?: d.googleDictation,
+        relayUrl = this[K.relayUrl] ?: d.relayUrl,
+        localAiAlways = this[K.localAiAlways] ?: d.localAiAlways,
+        loudReminders = this[K.loudReminders] ?: d.loudReminders,
+        memory = this[K.memory] ?: d.memory,
+        muteRecognizerBeep = this[K.muteRecognizerBeep] ?: d.muteRecognizerBeep,
         speakBrief = this[K.speakBrief] ?: d.speakBrief,
         goalTitle = this[K.goalTitle] ?: d.goalTitle,
         goalProgress = this[K.goalProgress] ?: d.goalProgress,
+        lockEnabled = this[K.lockEnabled] ?: d.lockEnabled,
+        pinSalt = this[K.pinSalt] ?: d.pinSalt,
+        pinHash = this[K.pinHash] ?: d.pinHash,
+        biometric = this[K.biometric] ?: d.biometric,
+        secureScreen = this[K.secureScreen] ?: d.secureScreen,
+        hideLockNotifs = this[K.hideLockNotifs] ?: d.hideLockNotifs,
+        glow = this[K.glow] ?: d.glow,
+        autoFinance = this[K.autoFinance] ?: d.autoFinance,
+        goalsJson = this[K.goalsJson] ?: d.goalsJson,
+        habitMetaJson = this[K.habitMetaJson] ?: d.habitMetaJson,
+        navItems = this[K.navItems] ?: d.navItems,
+        lastBackup = this[K.lastBackup] ?: d.lastBackup,
     )
 }
 
@@ -142,9 +213,30 @@ private fun MutablePreferences.write(s: AppSettings) {
     this[K.briefSpending] = s.briefSpending
     this[K.briefHabits] = s.briefHabits
     this[K.briefGoal] = s.briefGoal
+    this[K.briefOnLock] = s.briefOnLock
+    this[K.recordBeeps] = s.recordBeeps
+    this[K.googleWake] = s.googleWake
+    this[K.googleDictation] = s.googleDictation
+    this[K.relayUrl] = s.relayUrl
+    this[K.localAiAlways] = s.localAiAlways
+    this[K.loudReminders] = s.loudReminders
+    this[K.memory] = s.memory
+    this[K.muteRecognizerBeep] = s.muteRecognizerBeep
     this[K.speakBrief] = s.speakBrief
     this[K.goalTitle] = s.goalTitle
     this[K.goalProgress] = s.goalProgress
+    this[K.lockEnabled] = s.lockEnabled
+    this[K.pinSalt] = s.pinSalt
+    this[K.pinHash] = s.pinHash
+    this[K.biometric] = s.biometric
+    this[K.secureScreen] = s.secureScreen
+    this[K.hideLockNotifs] = s.hideLockNotifs
+    this[K.glow] = s.glow
+    this[K.autoFinance] = s.autoFinance
+    this[K.goalsJson] = s.goalsJson
+    this[K.habitMetaJson] = s.habitMetaJson
+    this[K.navItems] = s.navItems
+    this[K.lastBackup] = s.lastBackup
 }
 
 class SettingsRepository(private val context: Context) {

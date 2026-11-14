@@ -18,7 +18,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Widgets
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.PrivacyTip
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.WbSunny
@@ -44,8 +50,10 @@ import com.lifeos.app.ui.components.LabelPill
 import com.lifeos.app.ui.components.LifeScreen
 import com.lifeos.app.ui.components.PillButton
 import com.lifeos.app.ui.components.SectionTitle
+import com.lifeos.app.ui.components.SwitchRow
 import com.lifeos.app.ui.theme.AccentChoices
 import com.lifeos.app.ui.theme.Bg
+import com.lifeos.app.ui.theme.lifeBackground
 import com.lifeos.app.ui.theme.GrayText
 import com.lifeos.app.ui.theme.LocalAccent
 import com.lifeos.app.ui.theme.Snow
@@ -58,7 +66,7 @@ fun ProfileScreen(vm: AppViewModel, go: (String) -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(Bg)
+            .lifeBackground()
             .statusBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
@@ -79,11 +87,12 @@ fun ProfileScreen(vm: AppViewModel, go: (String) -> Unit) {
             modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
         )
 
+        ProfileRow("Аккаунт", Icons.Rounded.Person) { go("account") }
+        ProfileRow("Нижнее меню", Icons.Rounded.Apps) { go("navbar") }
+        ProfileRow("Виджеты", Icons.Rounded.Widgets) { go("widgets") }
         ProfileRow("Настройки помощника", Icons.Rounded.AutoAwesome) { go("assistant_settings") }
-        ProfileRow("Утренний обзор", Icons.Rounded.WbSunny) { go("morning_settings") }
         ProfileRow("Магазин роботов", Icons.Rounded.Storefront) { go("shop") }
         ProfileRow("Оформление", Icons.Rounded.Palette) { go("theme") }
-        ProfileRow("Дополнительно", Icons.Rounded.Settings) { go("extras") }
     }
 }
 
@@ -122,40 +131,95 @@ fun ThemeScreen(vm: AppViewModel, onBack: () -> Unit) {
                 )
             }
         }
+
+        SectionTitle("Фон и анимации")
+        SwitchRow(
+            "Мягкое свечение на экранах",
+            s.glow,
+            { on -> vm.update { it.copy(glow = on) } },
+            subtitle = "Лёгкий отблеск акцентного цвета в углу. Выключите, если нужен чисто чёрный фон.",
+        )
+        SwitchRow(
+            "Показывать робота на экране",
+            s.robotEnabled,
+            { on -> vm.update { it.copy(robotEnabled = on) } },
+            subtitle = "Анимированный робот появляется, когда вы зовёте помощника. Если выключить, помощник только отвечает голосом.",
+        )
+
+        SectionTitle("Живые обои")
+        Text(
+            "Тёмный фон с плавно дрейфующим свечением в цвете вашего акцента, прямо на рабочем столе.",
+            color = GrayText,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        val context = androidx.compose.ui.platform.LocalContext.current
+        PillButton(
+            "Установить живые обои",
+            {
+                val intent = android.content.Intent(android.app.WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
+                    .putExtra(
+                        android.app.WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
+                        android.content.ComponentName(context, com.lifeos.app.wallpaper.LifeWallpaperService::class.java),
+                    )
+                runCatching { context.startActivity(intent) }
+                    .onFailure {
+                        runCatching {
+                            context.startActivity(android.content.Intent(android.app.WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER))
+                        }
+                    }
+            },
+            Modifier.fillMaxWidth(),
+            outlined = true,
+        )
+        androidx.compose.foundation.layout.Box(Modifier.size(24.dp))
     }
 }
 
+/** Облако: сохранить данные сейчас или загрузить из аккаунта. Показывается в разделе «Аккаунт». */
 @Composable
-fun ExtrasScreen(vm: AppViewModel, onBack: () -> Unit) {
+fun CloudSection(vm: AppViewModel) {
     val user by vm.user.collectAsState()
     var message by remember { mutableStateOf<String?>(null) }
+    val cloud = user?.cloud == true
+
+    SectionTitle("Облако")
+    InfoCard(Modifier.fillMaxWidth()) {
+        Text(
+            if (cloud) "Данные сохраняются в облаке сами."
+            else "Облако не подключено: данные только на этом телефоне.",
+            color = GrayText,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+    if (cloud) {
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            PillButton("Сохранить сейчас", { vm.backupNow { message = it } }, Modifier.weight(1f), outlined = true)
+            PillButton("Загрузить", { vm.restoreNow { message = it } }, Modifier.weight(1f), outlined = true)
+        }
+    }
+    message?.let { Text(it, color = LocalAccent.current, modifier = Modifier.padding(top = 10.dp)) }
+    val last = vm.settings.collectAsState().value.lastBackup
+    Text(
+        if (last > 0) "Последнее сохранение: " + com.lifeos.app.ui.Fmt.dateTime(last) else "Сохранений в облаке ещё не было",
+        color = GrayText,
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.padding(top = 8.dp),
+    )
+}
+
+/** Выход из аккаунта и сведения о приложении. */
+@Composable
+fun ExitSection(vm: AppViewModel) {
+    val user by vm.user.collectAsState()
     var confirmExit by remember { mutableStateOf(false) }
     val cloud = user?.cloud == true
 
-    LifeScreen("Дополнительно", onBack = onBack) {
-        SectionTitle("Облако")
-        InfoCard(Modifier.fillMaxWidth()) {
-            Text(
-                if (cloud) "Ваши данные сохраняются в облаке автоматически через несколько секунд после изменения."
-                else "Облако не подключено: данные хранятся только на этом телефоне. Чтобы они сохранялись в аккаунте, подключите Firebase (см. README).",
-                color = GrayText,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-        if (cloud) {
-            Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                PillButton("Сохранить сейчас", { vm.backupNow { message = it } }, Modifier.weight(1f), outlined = true)
-                PillButton("Загрузить", { vm.restoreNow { message = it } }, Modifier.weight(1f), outlined = true)
-            }
-        }
-        message?.let { Text(it, color = LocalAccent.current, modifier = Modifier.padding(top = 10.dp)) }
+    SectionTitle("Выход")
+    PillButton("Выйти из аккаунта", { confirmExit = true }, Modifier.fillMaxWidth())
 
-        SectionTitle("Аккаунт")
-        PillButton("Выйти из аккаунта", { confirmExit = true }, Modifier.fillMaxWidth())
-
-        SectionTitle("О приложении")
-        Text("LifeOS 0.1.0", color = GrayText)
-    }
+    SectionTitle("О приложении")
+    Text("LifeOS 0.3", color = Snow)
 
     if (confirmExit) {
         FormDialog(

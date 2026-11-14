@@ -22,6 +22,12 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+
+        // Адрес бесплатного сервера ИИ (server/ai-relay). Задаётся в gradle.properties или переменной окружения AI_RELAY_URL.
+        val relayUrl = (System.getenv("AI_RELAY_URL")?.takeIf { it.isNotBlank() } ?: (project.findProperty("lifeos.aiRelayUrl") as String?) ?: "").trim()
+        val relayToken = (System.getenv("AI_RELAY_TOKEN")?.takeIf { it.isNotBlank() } ?: (project.findProperty("lifeos.aiRelayToken") as String?) ?: "").trim()
+        buildConfigField("String", "AI_RELAY_URL", "\"$relayUrl\"")
+        buildConfigField("String", "AI_RELAY_TOKEN", "\"$relayToken\"")
     }
 
     buildTypes {
@@ -41,6 +47,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -50,6 +57,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.biometric)
+    implementation(libs.androidx.fragment.ktx)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
@@ -68,7 +77,28 @@ dependencies {
     implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.kotlinx.serialization.json)
 
+    // Офлайн-распознавание речи (русский, без интернета и служб Google). Модель скачивается отдельно.
+    implementation("net.java.dev.jna:jna:5.18.1@aar")
+    implementation("com.alphacephei:vosk-android:0.3.75@aar")
+
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
+    // ИИ в телефоне (LiteRT-LM от Google) вынесен в отдельный модуль: библиотека собрана более новым Kotlin, чем остальное приложение
+    implementation(project(":llm"))
+}
+
+// Модуль :llm тянет библиотеку, собранную Kotlin 2.4, а наш компилятор (2.0.21) читает метаданные только до 2.1.
+// Для этапов компиляции и KSP возвращаем старые версии библиотек Kotlin; в самом приложении (runtime) остаются новые.
+configurations.configureEach {
+    val name = name.lowercase()
+    if (name.contains("compileclasspath") || name.startsWith("ksp")) {
+        resolutionStrategy.eachDependency {
+            when {
+                requested.group == "org.jetbrains.kotlin" && requested.name.startsWith("kotlin-stdlib") -> useVersion(libs.versions.kotlin.get())
+                requested.group == "org.jetbrains.kotlin" && requested.name == "kotlin-reflect" -> useVersion(libs.versions.kotlin.get())
+                requested.group == "org.jetbrains.kotlinx" && requested.name.startsWith("kotlinx-coroutines") -> useVersion(libs.versions.coroutines.get())
+            }
+        }
+    }
 }

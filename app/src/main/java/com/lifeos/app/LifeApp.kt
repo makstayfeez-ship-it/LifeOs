@@ -5,6 +5,12 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import androidx.room.Room
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import com.lifeos.app.assistant.Beeps
+import com.lifeos.app.assistant.SpeechMuter
 import com.lifeos.app.assistant.TtsManager
 import com.lifeos.app.brief.MorningBriefBuilder
 import com.lifeos.app.brief.WeatherClient
@@ -24,6 +30,22 @@ class LifeApp : Application() {
         super.onCreate()
         container = AppContainer(this)
         createChannels()
+        // Если приложение закрылось в момент, когда системные звуки были приглушены, возвращаем их
+        SpeechMuter.restore(this)
+        // Настройки звука помощника действуют во всём приложении
+        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            container.settings.flow.collect {
+                Beeps.enabled = it.recordBeeps
+                SpeechMuter.enabled = it.muteRecognizerBeep
+            }
+        }
+        // Утренний обзор на экране блокировки: ловим включение экрана (работает, пока приложение живо в памяти)
+        androidx.core.content.ContextCompat.registerReceiver(
+            this,
+            com.lifeos.app.brief.ScreenOnReceiver(),
+            android.content.IntentFilter(android.content.Intent.ACTION_SCREEN_ON),
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
     }
 
     private fun createChannels() {
@@ -34,11 +56,32 @@ class LifeApp : Application() {
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_BRIEF, "Утренний обзор", NotificationManager.IMPORTANCE_DEFAULT),
         )
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_REMINDER, "Напоминания", NotificationManager.IMPORTANCE_HIGH),
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_ALARM, "Громкое напоминание на весь экран", NotificationManager.IMPORTANCE_HIGH).apply {
+                setSound(null, null)
+                enableVibration(false)
+                setShowBadge(false)
+            },
+        )
+        // Тихий, но «важный» канал: только он позволяет открыть утренний обзор на весь экран поверх блокировки
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_BRIEF_LOCK, "Утренний обзор на экране", NotificationManager.IMPORTANCE_HIGH).apply {
+                setSound(null, null)
+                enableVibration(false)
+                setShowBadge(false)
+            },
+        )
     }
 
     companion object {
+        const val CHANNEL_REMINDER = "reminder"
         const val CHANNEL_ASSISTANT = "assistant"
         const val CHANNEL_BRIEF = "brief"
+        const val CHANNEL_BRIEF_LOCK = "brief_lock"
+        const val CHANNEL_ALARM = "reminder_alarm"
     }
 }
 
