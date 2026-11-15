@@ -156,13 +156,26 @@ object SystemAssistant {
     fun last(context: Context, key: String): Long =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(key, 0L)
 
-    /** Выбран ли LifeOS цифровым помощником по умолчанию. */
-    fun isDefault(context: Context): Boolean = runCatching {
-        val cr = context.contentResolver
-        listOf("assistant", "voice_interaction_service").any {
-            Settings.Secure.getString(cr, it).orEmpty().startsWith(context.packageName + "/")
+    /**
+     * Выбран ли LifeOS цифровым помощником по умолчанию.
+     * С Android 13 скрытые системные настройки приложениям недоступны, поэтому сначала спрашиваем у системы,
+     * держит ли LifeOS роль помощника, и только потом пробуем старый способ.
+     */
+    fun isDefault(context: Context): Boolean {
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            val byRole = runCatching {
+                val rm = context.getSystemService(Context.ROLE_SERVICE) as android.app.role.RoleManager
+                rm.isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT)
+            }.getOrDefault(false)
+            if (byRole) return true
         }
-    }.getOrDefault(false)
+        return runCatching {
+            val cr = context.contentResolver
+            listOf("assistant", "voice_interaction_service").any {
+                Settings.Secure.getString(cr, it).orEmpty().startsWith(context.packageName + "/")
+            }
+        }.getOrDefault(false)
+    }
 
     /** Открывает настройки, где выбирается помощник по умолчанию. */
     fun settingsIntent(): Intent =

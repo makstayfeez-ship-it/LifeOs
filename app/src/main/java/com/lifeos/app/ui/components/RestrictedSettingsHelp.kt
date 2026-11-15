@@ -23,7 +23,7 @@ fun RestrictedSettingsHint(modifier: Modifier = Modifier) {
     InfoCard(modifier.fillMaxWidth().padding(bottom = 8.dp)) {
         Text("Android пишет «ограниченный доступ»?", color = Snow, style = MaterialTheme.typography.titleSmall)
         Text(
-            "Сведения о приложении → ⋮ вверху справа → «Разрешить ограниченные настройки». Потом включите ещё раз.",
+            "Сначала нажмите LifeOS в списке и попробуйте включить: Android ответит «ограничено». Только после этого в «Сведениях о приложении» в меню ⋮ появится «Разрешить ограниченные настройки». Затем включите ещё раз.",
             color = GrayText,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
