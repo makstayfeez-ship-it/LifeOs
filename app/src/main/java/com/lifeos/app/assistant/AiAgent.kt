@@ -26,15 +26,22 @@ import org.json.JSONObject
 class AiAgent(private val context: Context, private val executor: CommandExecutor) {
     private val c get() = context.container
 
-    /** Куда отправлять запросы: свой ключ Anthropic или бесплатный сервер LifeOS (ключ тогда не нужен). */
-    private class Endpoint(val url: String, val headers: Map<String, String>, val relay: Boolean)
+    /**
+     * Куда отправлять запросы: нейросеть напрямую по ключу (вшитому в сборку или своему: Claude, OpenAI, Gemini и другие)
+     * или сервер-посредник LifeOS (ключ тогда не нужен).
+     */
+    private class Endpoint(val url: String, val headers: Map<String, String>, val relay: Boolean, val direct: Direct? = null)
 
     /** Облачный ИИ сейчас недоступен (лимит, сервер, сеть): можно ответить моделью из телефона. */
     private class AiUnavailable(message: String) : Exception(message)
 
     private suspend fun endpoint(s: AppSettings): Endpoint? {
-        if (s.apiKey.isNotBlank()) {
-            return Endpoint(API_URL, mapOf("x-api-key" to s.apiKey, "anthropic-version" to "2023-06-01"), relay = false)
+        direct(s)?.let { d ->
+            val headers = when (d.provider.kind) {
+                AiKind.ANTHROPIC -> mapOf("x-api-key" to d.key, "anthropic-version" to "2023-06-01")
+                AiKind.OPENAI -> mapOf("authorization" to "Bearer ${d.key}")
+            }
+            return Endpoint(d.provider.url, headers, relay = false, direct = d)
         }
         val base = relayBase(s) ?: return null
         val headers = buildMap {
@@ -85,8 +92,7 @@ class AiAgent(private val context: Context, private val executor: CommandExecuto
         val ep = endpoint(s)
         if (ep == null) {
             if (localReady && !hasImages) localAnswer(s, history, localText, textMode)?.let { return it }
-            return "Чтобы я отвечал на любые вопросы, нужен ИИ: он подключается, когда вы вошли в аккаунт LifeOS и в сборке есть сервер ИИ, " +
-                "либо скачайте ИИ в телефон (Настройки помощника). Будильник, таймер, заметки, напоминания, покупки, расходы и счёт работают и без него."
+            return NOT_CONNECTED
         }
         return withContext(Dispatchers.IO) {
             try {
@@ -94,9 +100,7 @@ class AiAgent(private val context: Context, private val executor: CommandExecuto
             } catch (e: Exception) {
                 // Облако недоступно: отвечаем моделью из телефона, если она скачана (фото ей не показать)
                 val local = if (localReady && !hasImages) localAnswer(s, history, localText, textMode) else null
-                local ?: if (e is AiUnavailable) e.message.orEmpty()
-                else if (hasImages) "Не получилось отправить фото ИИ. Проверь интернет и попробуй ещё раз."
-                else "Не получилось связаться с ИИ. Проверь интернет."
+                local ?: connectionProblem(ep, e, hasImages)
             }
         }
     }
@@ -209,14 +213,32 @@ class AiAgent(private val context: Context, private val executor: CommandExecuto
         else -> "Делаю…"
     }
 
-    /** Возвращает JSONObject с ответом или String с понятным сообщением об ошибке. */
-    private fun post(ep: Endpoint, system: String, messages: JSONArray, maxTokens: Int = 1024): Any {
+    /** Что показать человеку, когда связаться с ИИ не вышло. */
+    private fun connectionProblem(ep: Endpoint, e: Exception, hasImages: Boolean): String {
+        if (e is AiUnavailable) return e.message.orEmpty()
+        val name = ep.direct?.provider?.title ?: "ИИ"
+        return when {
+            e is java.io.IOException && hasImages -> "Не получилось отправить фото. Проверь интернет и попробуй ещё раз."
+            e is java.io.IOException -> "Не получилось связаться: $name. Проверь интернет; если он есть, сервис может не открываться без VPN."
+            e is org.json.JSONException -> "$name ответил непонятно. Попробуй ещё раз."
+            else -> "Не получилось связаться с ИИ (${e.javaClass.simpleName}). Проверь интернет."
+        }
+    }
+
+    /** Возвращает JSONObject с ответом (в формате Claude) или String с понятным сообщением об ошибке. */
+    private fun post(ep: Endpoint, system: String, messages: JSONArray, maxTokens: Int = 1024, withTools: Boolean = true): Any {
+        val d = ep.direct
+        val openAi = d != null && d.provider.kind == AiKind.OPENAI
+        val model = if (d != null) AiModels.pick(context, d.provider, d.key, d.model) else MODEL
+        // Модели с «размышлением» тратят часть лимита на мысли, поэтому запас больше
+        val tokens = if (openAi) minOf(maxTokens * 4, 8192) else maxTokens
         val body = JSONObject()
-            .put("model", MODEL)
-            .put("max_tokens", maxTokens)
+            .put("model", model)
+            .put("max_tokens", tokens)
             .put("system", system)
-            .put("tools", TOOLS)
             .put("messages", messages)
+        if (withTools) body.put("tools", TOOLS)
+        val payload = if (openAi) AiBridge.toOpenAi(body, model, d!!.provider.strictOpenAi) else body
         val conn = (URL(ep.url).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 10_000
@@ -226,35 +248,79 @@ class AiAgent(private val context: Context, private val executor: CommandExecuto
             ep.headers.forEach { (k, v) -> if (v.isNotBlank()) setRequestProperty(k, v) }
         }
         try {
-            conn.outputStream.use { it.write(body.toString().toByteArray()) }
-            if (conn.responseCode !in 200..299) {
-                val code = conn.responseCode
-                if (code == 429 || code == 402 || code == 503 || code >= 500) {
-                    throw AiUnavailable(
-                        if (ep.relay) "Бесплатный лимит ИИ сейчас исчерпан или сервер недоступен. Попробуй позже или скачай ИИ в телефон (настройки помощника)."
-                        else "ИИ сейчас недоступен (код $code): проверь счёт на console.anthropic.com или попробуй позже.",
-                    )
-                }
-                return if (ep.relay) {
-                    when (conn.responseCode) {
-                        401 -> "Чтобы пользоваться ИИ, войди в аккаунт LifeOS (вкладка «Профиль»). Для этого в приложении должно быть подключено облако."
-                        429 -> "Бесплатный лимит ИИ сейчас исчерпан (на сегодня или на сервер в целом). Попробуй позже."
-                        403 -> "Сервер ИИ не принял приложение. Нужна свежая версия LifeOS."
-                        503 -> "Сервер ИИ ещё не настроен владельцем приложения."
-                        else -> "Сервер ИИ сейчас недоступен (код ${conn.responseCode}). Попробуй позже."
-                    }
-                } else {
-                    when (conn.responseCode) {
-                        401, 403 -> "Ключ ИИ не подошёл. Проверь его в настройках помощника."
-                        402 -> "На счёте ИИ закончились деньги. Пополни баланс на console.anthropic.com."
-                        429 -> "Слишком много запросов, попробуй чуть позже."
-                        else -> "ИИ сейчас недоступен (код ${conn.responseCode})."
-                    }
-                }
+            conn.outputStream.use { it.write(payload.toString().toByteArray()) }
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                val err = runCatching { conn.errorStream?.bufferedReader()?.use { it.readText() } }.getOrNull().orEmpty()
+                return failure(ep, code, err)
             }
-            return JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+            val json = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+            return if (openAi) AiBridge.fromOpenAi(json) else json
         } finally {
             conn.disconnect()
+        }
+    }
+
+    /** Понятное объяснение отказа. Лимиты и сбои сервиса бросают [AiUnavailable] (тогда можно ответить моделью из телефона). */
+    private fun failure(ep: Endpoint, code: Int, errBody: String): Any {
+        val d = ep.direct
+        if (d == null) {
+            if (code == 429 || code == 402 || code == 503 || code >= 500) {
+                throw AiUnavailable("Бесплатный лимит ИИ сейчас исчерпан или сервер недоступен. Попробуй позже или скачай ИИ в телефон (настройки помощника).")
+            }
+            return when (code) {
+                401 -> "Чтобы пользоваться ИИ, войди в аккаунт LifeOS (вкладка «Профиль»). Для этого в приложении должно быть подключено облако."
+                403 -> "Сервер ИИ не принял приложение. Нужна свежая версия LifeOS."
+                else -> "Сервер ИИ сейчас недоступен (код $code). Попробуй позже."
+            }
+        }
+        val name = d.provider.title
+        val low = errBody.lowercase()
+        val region = code in listOf(400, 401, 403) && Regex(
+            "unsupported_country|country, region|location is not supported|not available in your (country|region)|not supported in your",
+        ).containsMatchIn(low)
+        val money = code == 402 || (code in listOf(400, 429) && Regex("insufficient_quota|billing|credit balance|exceeded your current quota|quota").containsMatchIn(low))
+        return when {
+            region -> "$name не работает в вашей стране или сети. Включите VPN или выберите другой сервис."
+            code == 401 || code == 403 -> "$name не принял ключ. Проверьте его в «Подключить ИИ»."
+            money -> throw AiUnavailable("На счёте $name закончились деньги или исчерпан лимит. Пополните баланс у сервиса.")
+            code == 429 -> throw AiUnavailable("$name просит подождать: слишком много запросов. Попробуйте через минуту.")
+            code == 404 || (code == 400 && "model" in low) -> {
+                AiModels.forget(context)
+                "$name не нашёл модель. Впишите другую в «Подключить ИИ» → «Дополнительно» → «Модель»."
+            }
+            code >= 500 -> throw AiUnavailable("$name сейчас не отвечает (код $code). Попробуйте позже.")
+            else -> "$name вернул ошибку $code. ${errorText(errBody)}".trim()
+        }
+    }
+
+    /** Короткий текст ошибки из ответа сервиса, если он там есть. */
+    private fun errorText(body: String): String {
+        val msg = runCatching {
+            val j = JSONObject(body)
+            j.optJSONObject("error")?.optString("message")?.takeIf { it.isNotBlank() } ?: j.optString("message")
+        }.getOrNull().orEmpty()
+        return msg.replace('\n', ' ').take(180)
+    }
+
+    /** Проверка связи для экрана «Подключить ИИ»: короткий запрос без инструментов и понятный итог. */
+    suspend fun test(s: AppSettings): String = withContext(Dispatchers.IO) {
+        val ep = endpoint(s) ?: return@withContext "Ключ не задан или сервис не определён."
+        try {
+            val msgs = JSONArray().put(JSONObject().put("role", "user").put("content", "Ответь одним словом: готово"))
+            val r = post(ep, "Это проверка связи. Отвечай одним словом.", msgs, 200, withTools = false)
+            if (r is String) return@withContext "✗ $r"
+            val content = (r as JSONObject).getJSONArray("content")
+            val sb = StringBuilder()
+            for (i in 0 until content.length()) {
+                val b = content.getJSONObject(i)
+                if (b.optString("type") == "text") sb.append(b.optString("text"))
+            }
+            val d = ep.direct
+            val who = if (d != null) "${d.provider.title}, модель ${AiModels.pick(context, d.provider, d.key, d.model)}" else "сервер LifeOS"
+            "✓ Работает: $who. Ответ: «${sb.toString().trim().take(40)}»"
+        } catch (e: Exception) {
+            "✗ " + connectionProblem(ep, e, false)
         }
     }
 
@@ -378,10 +444,30 @@ class AiAgent(private val context: Context, private val executor: CommandExecuto
         fun relayBase(s: AppSettings): String? =
             s.relayUrl.trim().ifBlank { BuildConfig.AI_RELAY_URL.trim() }.trimEnd('/').takeIf { it.startsWith("https://") }
 
-        /** ИИ работает: есть свой ключ или доступен бесплатный сервер. */
-        fun configured(s: AppSettings): Boolean = s.apiKey.isNotBlank() || relayBase(s) != null
+        /** ИИ подключён напрямую: свой ключ (пока не вшит свой) или ключ, вшитый в сборку. */
+        class Direct(val provider: AiProvider, val key: String, val model: String, val builtIn: Boolean)
 
-        private const val API_URL = "https://api.anthropic.com/v1/messages"
+        fun direct(s: AppSettings): Direct? {
+            val own = s.apiKey.trim()
+            if (own.isNotBlank() || s.aiBaseUrl.isNotBlank()) {
+                AiProviders.resolve(own, s.aiBaseUrl.trim(), s.aiModel)?.takeIf { own.isNotBlank() }?.let {
+                    return Direct(it, own, s.aiModel.trim(), builtIn = false)
+                }
+            }
+            val key = BuildConfig.AI_KEY.trim()
+            if (key.isBlank()) return null
+            val p = AiProviders.resolve(key, BuildConfig.AI_BASE_URL.trim(), BuildConfig.AI_MODEL.trim()) ?: return null
+            return Direct(p, key, BuildConfig.AI_MODEL.trim(), builtIn = true)
+        }
+
+        /** ИИ работает: есть ключ (свой или вшитый в сборку) или доступен сервер LifeOS. */
+        fun configured(s: AppSettings): Boolean = direct(s) != null || relayBase(s) != null
+
+        /** Адрес сервера, с которым говорит ИИ сейчас (для проверки сети). */
+        fun host(s: AppSettings): Pair<String, String>? = direct(s)?.let { it.provider.title to "https://${it.provider.host}/" }
+
+        const val NOT_CONNECTED = "Нейросеть пока не подключена. Будильник, таймер, заметки, напоминания, покупки и расходы работают и без неё."
+
         private const val MODEL = "claude-sonnet-5-5"
         private const val MAX_ROUNDS = 6
         private const val MAX_ROUNDS_TEXT = 9

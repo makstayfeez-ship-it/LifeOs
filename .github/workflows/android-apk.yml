@@ -67,6 +67,10 @@ jobs:
           # Необязательно: адрес бесплатного сервера ИИ (Settings → Secrets and variables → Actions → Variables)
           AI_RELAY_URL: ${{ vars.AI_RELAY_URL }}
           AI_RELAY_TOKEN: ${{ vars.AI_RELAY_TOKEN }}
+          # ИИ из коробки: ключ нейросети (Secrets → AI_KEY), по желанию адрес сервиса и модель (Variables)
+          AI_KEY: ${{ secrets.AI_KEY }}
+          AI_BASE_URL: ${{ vars.AI_BASE_URL }}
+          AI_MODEL: ${{ vars.AI_MODEL }}
         run: ./gradlew --no-daemon assembleDebug
 
       - name: Upload APK

@@ -114,6 +114,8 @@ class ChatMsg(
     val attachNames: List<String> = emptyList(),
     val thumbs: List<Bitmap> = emptyList(),
     val error: Boolean = false,
+    /** Нейросеть не подключена: под ответом показывается кнопка «Подключить». */
+    val needsAi: Boolean = false,
 ) {
     /** Как реплика попадает в память диалога для ИИ: старые фото не пересылаем, только пометку о них. */
     fun forHistory(): String =
@@ -161,7 +163,7 @@ object TextChat {
             } catch (e: Exception) {
                 "Что-то пошло не так: ${e.message ?: "неизвестная ошибка"}"
             }
-            messages += ChatMsg(false, reply)
+            messages += ChatMsg(false, reply, needsAi = reply == AiAgent.NOT_CONNECTED)
             while (messages.size > 60) messages.removeAt(0)
             busy = false
             status = ""
@@ -585,6 +587,23 @@ class TextAssistActivity : ComponentActivity() {
                 if (m.text.isNotBlank()) {
                     val ink = if (m.fromUser) Color(0xFF0B0B0D) else if (m.error) Color(0xFFFFB4A8) else Snow
                     SelectionContainer { Text(linkify(m.text, accent, m.fromUser), color = ink, fontSize = 16.sp, lineHeight = 22.sp) }
+                }
+                if (m.needsAi) {
+                    Box(
+                        Modifier
+                            .padding(top = 8.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(accent)
+                            .clickable {
+                                startActivity(
+                                    Intent(this@TextAssistActivity, MainActivity::class.java)
+                                        .putExtra(MainActivity.EXTRA_ROUTE, "ai_setup")
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                                )
+                                finish()
+                            }
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    ) { Text("Подключить нейросеть", color = Color(0xFF0B0B0D), fontSize = 14.sp, fontWeight = FontWeight.Bold) }
                 }
             }
         }

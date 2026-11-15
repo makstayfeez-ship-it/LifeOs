@@ -65,6 +65,9 @@ data class AppSettings(
     val googleDictation: Boolean = false,
     /** Свой адрес сервера ИИ (необязательно, заменяет встроенный). */
     val relayUrl: String = "",
+    /** Свой адрес чата (любой сервис, совместимый с OpenAI) и своя модель; пусто — по ключу определяется само. */
+    val aiBaseUrl: String = "",
+    val aiModel: String = "",
     /** Всегда отвечать моделью в телефоне (без интернета и без лимитов), а не облачным ИИ. */
     val localAiAlways: Boolean = false,
     /** Громкое напоминание на весь экран кроме обычного уведомления. */
@@ -131,6 +134,8 @@ private object K {
     val googleWake = booleanPreferencesKey("google_wake")
     val googleDictation = booleanPreferencesKey("google_dictation")
     val relayUrl = stringPreferencesKey("relay_url")
+    val aiBaseUrl = stringPreferencesKey("ai_base_url")
+    val aiModel = stringPreferencesKey("ai_model")
     val localAiAlways = booleanPreferencesKey("local_ai_always")
     val loudReminders = booleanPreferencesKey("loud_reminders")
     val memory = stringPreferencesKey("assistant_memory")
@@ -190,6 +195,8 @@ private fun Preferences.toSettings(): AppSettings {
         googleWake = this[K.googleWake] ?: d.googleWake,
         googleDictation = this[K.googleDictation] ?: d.googleDictation,
         relayUrl = this[K.relayUrl] ?: d.relayUrl,
+        aiBaseUrl = this[K.aiBaseUrl] ?: d.aiBaseUrl,
+        aiModel = this[K.aiModel] ?: d.aiModel,
         localAiAlways = this[K.localAiAlways] ?: d.localAiAlways,
         loudReminders = this[K.loudReminders] ?: d.loudReminders,
         memory = this[K.memory] ?: d.memory,
@@ -248,6 +255,8 @@ private fun MutablePreferences.write(s: AppSettings) {
     this[K.googleWake] = s.googleWake
     this[K.googleDictation] = s.googleDictation
     this[K.relayUrl] = s.relayUrl
+    this[K.aiBaseUrl] = s.aiBaseUrl
+    this[K.aiModel] = s.aiModel
     this[K.localAiAlways] = s.localAiAlways
     this[K.loudReminders] = s.loudReminders
     this[K.memory] = s.memory

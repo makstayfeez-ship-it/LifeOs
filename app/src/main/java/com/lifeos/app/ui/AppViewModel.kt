@@ -133,7 +133,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun checkNetwork(done: (List<com.lifeos.app.data.NetCheck.Row>) -> Unit) {
         viewModelScope.launch {
             val relay = com.lifeos.app.assistant.AiAgent.relayBase(c.settings.current())
-            val extra = if (relay != null) listOf("Сервер ИИ LifeOS" to relay) else emptyList()
+            val ai = com.lifeos.app.assistant.AiAgent.host(c.settings.current())
+            val extra = listOfNotNull(
+                relay?.let { "Сервер ИИ LifeOS" to it },
+                ai?.let { "Нейросеть (${it.first})" to it.second },
+            )
             done(com.lifeos.app.data.NetCheck.run(extra))
         }
     }

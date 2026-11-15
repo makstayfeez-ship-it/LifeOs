@@ -199,7 +199,7 @@ fun AssistantChatScreen(vm: AppViewModel, onBack: () -> Unit, onSettings: () -> 
 // ---------------------------------------------------------------- Настройки помощника
 
 @Composable
-fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () -> Unit) {
+fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () -> Unit, onAi: () -> Unit = {}) {
     val s by vm.settings.collectAsState()
     val context = LocalContext.current
     val accent = LocalAccent.current
@@ -224,6 +224,25 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () ->
     val callNow = rememberMicRequest { AssistantControl.summon(context) }
 
     LifeScreen("Настройки помощника", onBack = onBack) {
+        SectionTitle("Нейросеть")
+        InfoCard(Modifier.fillMaxWidth()) {
+            val direct = com.lifeos.app.assistant.AiAgent.direct(s)
+            val ready = com.lifeos.app.assistant.AiAgent.configured(s)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    when {
+                        direct != null -> "✓ Подключена: ${direct.provider.title}"
+                        ready -> "✓ Подключена через сервер LifeOS"
+                        else -> "Не подключена"
+                    },
+                    color = if (ready) Color(0xFF4CD964) else Color(0xFFFF6B6B),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                )
+                PillButton(if (ready) "Проверить" else "Подключить", onAi)
+            }
+        }
+
         SectionTitle("Имя")
         Text(
             "Помощник откликается на «LifeOS», «OS» и на имя, которое вы ему дадите.",

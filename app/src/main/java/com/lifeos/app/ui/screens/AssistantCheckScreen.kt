@@ -54,7 +54,7 @@ fun assistantProblems(context: android.content.Context, wakeEnabled: Boolean): I
 
 /** Показывает, что нужно для работы помощника, что он слышит и почему мог замолчать. */
 @Composable
-fun AssistantCheckScreen(vm: AppViewModel, onBack: () -> Unit) {
+fun AssistantCheckScreen(vm: AppViewModel, onBack: () -> Unit, onAi: () -> Unit = {}) {
     val context = LocalContext.current
     val s by vm.settings.collectAsState()
     val status by AssistantStatus.state.collectAsState()
@@ -149,10 +149,12 @@ fun AssistantCheckScreen(vm: AppViewModel, onBack: () -> Unit) {
                 "ИИ подключён",
                 com.lifeos.app.assistant.AiAgent.configured(s),
                 when {
-                    s.apiKey.isNotBlank() -> "Работает со своим ключом: помощник отвечает на любые вопросы и сам выбирает действия"
-                    com.lifeos.app.assistant.AiAgent.configured(s) -> "Работает через бесплатный сервер LifeOS: ключ не нужен, лимит запросов в день общий"
-                    else -> "Сервер ИИ не подключён. Помощник понимает только готовые команды. Вставьте свой ключ или адрес сервера в «Настройках помощника»"
+                    com.lifeos.app.assistant.AiAgent.direct(s) != null ->
+                        "Работает: ${com.lifeos.app.assistant.AiAgent.direct(s)?.provider?.title}. Помощник отвечает на любые вопросы и сам выбирает действия"
+                    com.lifeos.app.assistant.AiAgent.configured(s) -> "Работает через сервер LifeOS: ключ не нужен, лимит запросов в день общий"
+                    else -> "Нейросеть не подключена: помощник понимает только готовые команды"
                 },
+                action = { PillButton("Подключить или проверить", onAi, Modifier.padding(top = 6.dp)) },
             )
             CheckRow(
                 "Видит экран и управляет им",

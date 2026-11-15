@@ -20,14 +20,26 @@ android {
         applicationId = "com.lifeos.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // Номер сборки CI виден в приложении: так понятно, какая версия установлена
+        val runNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = runNumber
+        versionName = "0.1.$runNumber"
 
         // Адрес бесплатного сервера ИИ (server/ai-relay). Задаётся в gradle.properties или переменной окружения AI_RELAY_URL.
         val relayUrl = (System.getenv("AI_RELAY_URL")?.takeIf { it.isNotBlank() } ?: (project.findProperty("lifeos.aiRelayUrl") as String?) ?: "").trim()
         val relayToken = (System.getenv("AI_RELAY_TOKEN")?.takeIf { it.isNotBlank() } ?: (project.findProperty("lifeos.aiRelayToken") as String?) ?: "").trim()
         buildConfigField("String", "AI_RELAY_URL", "\"$relayUrl\"")
         buildConfigField("String", "AI_RELAY_TOKEN", "\"$relayToken\"")
+
+        // ИИ «из коробки»: ключ нейросети вшивается в сборку, и у пользователей он уже подключён (OpenAI, Claude, Gemini и другие).
+        // Задаётся секретом AI_KEY в GitHub (Settings → Secrets and variables → Actions) или переменной окружения.
+        // Ключ можно достать из APK, поэтому у провайдера обязательно ставьте лимит расходов.
+        fun cfg(env: String, prop: String, extra: String = ""): String =
+            (System.getenv(env)?.takeIf { it.isNotBlank() } ?: (project.findProperty(prop) as String?) ?: "")
+                .trim().filter { it.isLetterOrDigit() || it in "-_./:$extra" }
+        buildConfigField("String", "AI_KEY", "\"${cfg("AI_KEY", "lifeos.aiKey")}\"")
+        buildConfigField("String", "AI_BASE_URL", "\"${cfg("AI_BASE_URL", "lifeos.aiBaseUrl")}\"")
+        buildConfigField("String", "AI_MODEL", "\"${cfg("AI_MODEL", "lifeos.aiModel")}\"")
     }
 
     buildTypes {
