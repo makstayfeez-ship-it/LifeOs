@@ -60,6 +60,9 @@ class NotepadOverlay(private val context: Context) {
     /** Нажатие на «Сохранить». */
     var onStop: () -> Unit = {}
 
+    /** Нажатие на крестик: остановить запись и ничего не сохранять. */
+    var onClose: () -> Unit = {}
+
     fun show(newSkin: RobotSkin) {
         skin = newSkin
         text = ""
@@ -114,6 +117,7 @@ class NotepadOverlay(private val context: Context) {
         owner?.stop()
         owner = null
         onStop = {}
+        onClose = {}
     }
 
     @androidx.compose.runtime.Composable
@@ -154,6 +158,7 @@ class NotepadOverlay(private val context: Context) {
                     )
                 }
                 RobotView(skin, if (state == 1) RobotMood.HAPPY else RobotMood.LISTENING, Modifier.size(84.dp))
+                if (state == 0 || state == 3) CardClose(ink.copy(alpha = 0.7f), { onClose() }, Modifier.align(Alignment.Top))
             }
             Box(
                 Modifier

@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -88,7 +89,16 @@ class QuickNoteActivity : ComponentActivity() {
 
                 Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
                     InfoCard(Modifier.fillMaxWidth()) {
-                        Text(status, color = LocalAccent.current, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                        Row(verticalAlignment = Alignment.Top) {
+                            Text(
+                                status,
+                                color = LocalAccent.current,
+                                style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.weight(1f).padding(top = 10.dp),
+                            )
+                            // Позвали случайно: крестик закрывает окно без сохранения, голос не нужен
+                            CardClose(GrayText, { finish() })
+                        }
                         if (partial.isNotBlank()) {
                             Text(partial, color = Snow, modifier = Modifier.padding(top = 8.dp))
                         } else {

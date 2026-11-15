@@ -68,6 +68,9 @@ class ReminderOverlay(private val context: Context) {
     var onSave: () -> Unit = {}
     var onCancel: () -> Unit = {}
 
+    /** Нажатие на крестик: остановить всё и закрыть карточку, ничего не создавая. */
+    var onClose: () -> Unit = {}
+
     fun show(newSkin: RobotSkin) {
         skin = newSkin
         mode = 0
@@ -137,6 +140,7 @@ class ReminderOverlay(private val context: Context) {
         owner = null
         onSave = {}
         onCancel = {}
+        onClose = {}
     }
 
     @Composable
@@ -174,6 +178,7 @@ class ReminderOverlay(private val context: Context) {
                     )
                 }
                 RobotView(skin, if (mode == 3) RobotMood.HAPPY else RobotMood.LISTENING, Modifier.size(64.dp))
+                if (mode != 3) CardClose(dim, { onClose() }, Modifier.align(Alignment.Top))
             }
 
             Column(Modifier.fillMaxWidth().heightIn(min = 86.dp).padding(top = 12.dp)) {

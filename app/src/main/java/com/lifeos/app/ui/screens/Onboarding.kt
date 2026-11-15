@@ -98,7 +98,7 @@ private val HomeKeys = listOf("tasks", "habits", "finance", "notes", "goal", "mo
 
 private val BotLines = listOf(
     "Привет! Я твой помощник. Давай настроим меня и проверим",
-    "Нельзя говорить? Зови меня жестом, и я открою тихий чат",
+    "Нельзя говорить? Проведи пальцем от нижнего угла, и я открою тихий чат",
     "Заметки — это быстро. Попробуй сказать",
     "Я напомню вовремя. Скажи, о чём",
     "Выбери, что видеть на главной",
@@ -318,7 +318,7 @@ private class StepInfo(val icon: ImageVector, val title: String, val subtitle: S
 
 private val StepInfos = listOf(
     StepInfo(Icons.Rounded.AutoAwesome, "ИИ-помощник", "Настрой и проверь, как он работает"),
-    StepInfo(Icons.Rounded.Keyboard, "Тихий чат", "Вызов без голоса: кнопкой или жестом"),
+    StepInfo(Icons.Rounded.Keyboard, "Тихий чат", "Вызов без голоса: жестом от угла экрана"),
     StepInfo(Icons.Rounded.StickyNote2, "Заметки", "Диктуй мысли, пока заняты руки"),
     StepInfo(Icons.Rounded.Notifications, "Напоминания", "Не забудешь ни про что"),
     StepInfo(Icons.Rounded.Widgets, "Главный экран", "Что показывать сразу"),
@@ -484,7 +484,7 @@ private fun CheckRow(text: String, state: Int) {
 
 // ---------------------------------------------------------------- шаг 2: тихий чат жестом
 
-/** Анимированный показ: удерживаем кнопку питания, и снизу на экране выезжает чат. */
+/** Анимированный показ: палец едет от нижнего угла к центру экрана, и снизу выезжает чат. */
 @Composable
 private fun GestureDemo() {
     val accent = LocalAccent.current
@@ -497,8 +497,11 @@ private fun GestureDemo() {
         ),
         label = "gesture-progress",
     )
-    val pressing = p in 0.08f..0.40f
-    val appear = ((p - 0.44f) / 0.10f).coerceIn(0f, 1f)
+    // Палец: от нижнего левого угла к центру (с 8% до 40% цикла), потом исчезает
+    val swipe = ((p - 0.08f) / 0.32f).coerceIn(0f, 1f)
+    val swiping = p in 0.08f..0.46f
+    val fingerAlpha = if (swiping) 1f - ((p - 0.40f) / 0.06f).coerceIn(0f, 1f) else 0f
+    val appear = ((p - 0.46f) / 0.10f).coerceIn(0f, 1f)
     val barAlpha = appear * (1f - ((p - 0.90f) / 0.08f).coerceIn(0f, 1f))
     val body = RoundedCornerShape(22.dp)
 
@@ -507,53 +510,63 @@ private fun GestureDemo() {
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(width = 116.dp, height = 196.dp)) {
-            Box(
-                Modifier
-                    .size(width = 106.dp, height = 196.dp)
-                    .clip(body)
-                    .background(Bg)
-                    .border(2.dp, GrayText, body),
-            ) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    repeat(4) { i ->
-                        Box(
-                            Modifier
-                                .fillMaxWidth(if (i % 2 == 0) 0.85f else 0.6f)
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(CardBorder),
-                        )
-                    }
-                }
-                Box(
-                    Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(start = 8.dp, end = 8.dp, bottom = 10.dp)
-                        .offset(y = ((1f - appear) * 22f).dp)
-                        .alpha(barAlpha)
-                        .fillMaxWidth()
-                        .height(30.dp)
-                        .clip(CircleShape)
-                        .background(CardColor)
-                        .border(1.5.dp, accent, CircleShape),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    Text("Спросите…", color = GrayText, fontSize = 10.sp, modifier = Modifier.padding(start = 12.dp))
+        Box(
+            Modifier
+                .size(width = 106.dp, height = 196.dp)
+                .clip(body)
+                .background(Bg)
+                .border(2.dp, GrayText, body),
+        ) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                repeat(4) { i ->
+                    Box(
+                        Modifier
+                            .fillMaxWidth(if (i % 2 == 0) 0.85f else 0.6f)
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(CardBorder),
+                    )
                 }
             }
-            // Кнопка питания на правом ребре: при нажатии загорается
+            // След пальца: три точки позади, чтобы было видно направление
+            for (k in 3 downTo 1) {
+                val t = (swipe - k * 0.14f).coerceAtLeast(0f)
+                Box(
+                    Modifier
+                        .offset(x = (6f + 44f * t).dp, y = (166f - 62f * t).dp)
+                        .alpha(fingerAlpha * (0.5f - k * 0.1f).coerceAtLeast(0f))
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(accent),
+                )
+            }
             Box(
                 Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 56.dp)
-                    .size(width = 6.dp, height = 40.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(if (pressing) accent else GrayText),
+                    .offset(x = (2f + 44f * swipe).dp, y = (162f - 62f * swipe).dp)
+                    .alpha(fingerAlpha)
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(accent)
+                    .border(2.dp, Snow, CircleShape),
             )
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(start = 8.dp, end = 8.dp, bottom = 10.dp)
+                    .offset(y = ((1f - appear) * 22f).dp)
+                    .alpha(barAlpha)
+                    .fillMaxWidth()
+                    .height(30.dp)
+                    .clip(CircleShape)
+                    .background(CardColor)
+                    .border(1.5.dp, accent, CircleShape),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Text("Спросите…", color = GrayText, fontSize = 10.sp, modifier = Modifier.padding(start = 12.dp))
+            }
         }
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            DemoCaption("1", "Удержите кнопку питания 1–2 секунды", pressing)
+            DemoCaption("1", "Проведите пальцем от нижнего угла экрана к центру", swiping)
             DemoCaption("2", "Снизу появится тихий чат", appear > 0.5f)
         }
     }
@@ -584,7 +597,7 @@ private fun StepChat(vm: AppViewModel, s: AppSettings) {
     Label("КАК ВЫЗВАТЬ")
     GestureDemo()
     Text(
-        "Можно и жестом от угла экрана, если телефон так умеет.",
+        "Работает из любого приложения. Кнопкой питания тоже можно, если телефон так умеет.",
         color = GrayText,
         fontSize = 13.sp,
         modifier = Modifier.padding(top = 4.dp),

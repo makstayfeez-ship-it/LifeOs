@@ -82,6 +82,10 @@ class AssistantService : Service() {
     private val notepad by lazy { NotepadOverlay(this) }
     private val reminderCard by lazy { ReminderOverlay(this) }
 
+    /** Нажали на крестик в окне заметки или напоминания: всё останавливается, ничего не сохраняется. */
+    @Volatile private var noteDiscarded = false
+    @Volatile private var cardClosed = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -250,8 +254,13 @@ class AssistantService : Service() {
     /** Быстрая заметка голосом: сигнал, диктовка до паузы, потом текст сохраняется в заметки. Экран не нужен. */
     private suspend fun quickNote(s: AppSettings, inline: String) {
         var text = inline
+        noteDiscarded = false
         if (text.isBlank()) text = dictateNote(s)
         else saveNote(text)
+        if (noteDiscarded) {
+            noteDiscarded = false
+            return
+        }
         if (text.isBlank()) {
             withTimeoutOrNull(10_000) { container.tts.speakAndWait("Ничего не слышно, заметка не записана", s) }
             return
@@ -278,9 +287,19 @@ class AssistantService : Service() {
         coroutineScope {
             val job = launch { d.run { notepad.update(it) } }
             notepad.onStop = { job.cancel() }
+            notepad.onClose = {
+                noteDiscarded = true
+                job.cancel()
+                listener.cancel()
+            }
             job.join()
         }
         notepad.onStop = {}
+        notepad.onClose = {}
+        if (noteDiscarded) {
+            if (canShow) notepad.hide()
+            return ""
+        }
         val text = d.text
         if (text.isNotBlank()) {
             saveNote(text)
@@ -444,6 +463,7 @@ class AssistantService : Service() {
         var attempt = 0
         while (currentCoroutineContext().isActive) {
             val r = listener.listen(accurate = s.googleDictation, onPartial = onPartial, onReady = onReady)
+            if (cardClosed) return ""
             when (r) {
                 is SpeechResult.Heard -> return r.text
                 SpeechResult.Silence -> Unit
@@ -467,6 +487,16 @@ class AssistantService : Service() {
      */
     private suspend fun quickReminder(s: AppSettings, inline: String) {
         val canShow = Settings.canDrawOverlays(this)
+        cardClosed = false
+        var listenJob: Job? = null
+        var decision: CompletableDeferred<Boolean>? = null
+        reminderCard.onClose = {
+            cardClosed = true
+            listenJob?.cancel()
+            listener.cancel()
+            container.tts.stop()
+            decision?.complete(false)
+        }
         if (canShow) reminderCard.show(SkinCatalog.byId(s.skinId))
         try {
             var known = ""
@@ -475,7 +505,7 @@ class AssistantService : Service() {
             var task: Command.AddTask? = null
             var failure: String? = null
             var rounds = 0
-            while (task == null && failure == null && currentCoroutineContext().isActive) {
+            while (task == null && failure == null && !cardClosed && currentCoroutineContext().isActive) {
                 if (++rounds > 3) {
                     failure = "Не получилось понять напоминание. Скажите, например: «напомни завтра в 15:00 сходить к стоматологу»"
                     break
@@ -483,15 +513,25 @@ class AssistantService : Service() {
                 if (heard.isBlank()) {
                     reminderCard.preparing()
                     if (question.isNotBlank() && !canShow) withTimeoutOrNull(10_000) { container.tts.speakAndWait(question, s) }
-                    heard = listenPhrase(
-                        s,
-                        retries = 1,
-                        onPartial = { reminderCard.listening((known + " " + it).trim(), question) },
-                        onReady = {
-                            Beeps.ready()
-                            reminderCard.listening(known, question)
-                        },
-                    )
+                    var phrase = ""
+                    coroutineScope {
+                        val j = launch {
+                            phrase = listenPhrase(
+                                s,
+                                retries = 1,
+                                onPartial = { reminderCard.listening((known + " " + it).trim(), question) },
+                                onReady = {
+                                    Beeps.ready()
+                                    reminderCard.listening(known, question)
+                                },
+                            )
+                        }
+                        listenJob = j
+                        j.join()
+                    }
+                    listenJob = null
+                    if (cardClosed) return
+                    heard = phrase
                     if (heard.isBlank()) {
                         failure = "Ничего не слышно, напоминание не создано"
                         break
@@ -516,6 +556,7 @@ class AssistantService : Service() {
                 }
             }
 
+            if (cardClosed) return
             val t = task
             if (t == null) {
                 reminderCard.fail(failure ?: "Напоминание не создано")
@@ -527,12 +568,14 @@ class AssistantService : Service() {
             // Итог на карточке: можно сразу сохранить или отменить, без ответа сохранится само через пару секунд
             var save = true
             if (canShow) {
-                val decision = CompletableDeferred<Boolean>()
-                reminderCard.onSave = { decision.complete(true) }
-                reminderCard.onCancel = { decision.complete(false) }
+                val d = CompletableDeferred<Boolean>()
+                decision = d
+                reminderCard.onSave = { d.complete(true) }
+                reminderCard.onCancel = { d.complete(false) }
                 reminderCard.confirm(whenLabel(t), t.title)
-                save = withTimeoutOrNull(3_500) { decision.await() } ?: true
+                save = withTimeoutOrNull(3_500) { d.await() } ?: true
             }
+            if (cardClosed) return
             if (!save) {
                 reminderCard.fail("Отменено")
                 delay(700)
@@ -545,6 +588,7 @@ class AssistantService : Service() {
             delay(900)
         } finally {
             reminderCard.hide()
+            cardClosed = false
         }
     }
 
