@@ -1,5 +1,6 @@
 package com.lifeos.app.ui.screens
 
+import com.lifeos.app.ui.theme.onAccent
 import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -151,7 +152,7 @@ fun LockScreen(vm: AppViewModel) {
                                 Icon(Icons.Rounded.Fingerprint, "Отпечаток", tint = accent, modifier = Modifier.size(28.dp))
                             }
                             "ok" -> PadKey(onClick = { submit() }, visible = true, filled = pin.length >= PinLock.MIN_LENGTH) {
-                                Icon(Icons.Rounded.Check, "Войти", tint = Color.White, modifier = Modifier.size(28.dp))
+                                Icon(Icons.Rounded.Check, "Войти", tint = onAccent(accent), modifier = Modifier.size(28.dp))
                             }
                             else -> PadKey(
                                 onClick = { if (!blocked && pin.length < PinLock.MAX_LENGTH) { pin += key; error = null } },

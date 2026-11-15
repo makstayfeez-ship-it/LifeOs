@@ -1,5 +1,7 @@
 package com.lifeos.app.ui.screens
 
+import com.lifeos.app.ui.theme.onAccent
+import com.lifeos.app.ui.theme.CardBorder
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -173,7 +175,7 @@ fun HabitsScreen(vm: AppViewModel, onBack: () -> Unit) {
                     }
                     ProgressRing(fraction, "$doneToday/${habits.size}", Modifier.size(64.dp), stroke = 6f)
                 }
-                Box(Modifier.fillMaxWidth().padding(top = 10.dp).height(8.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF3A3A40))) {
+                Box(Modifier.fillMaxWidth().padding(top = 10.dp).height(8.dp).clip(RoundedCornerShape(4.dp)).background(CardBorder)) {
                     Box(Modifier.fillMaxWidth(Levels.progress(points).coerceAtLeast(0.02f)).height(8.dp).clip(RoundedCornerShape(4.dp)).background(accent))
                 }
             }
@@ -224,9 +226,9 @@ fun HabitsScreen(vm: AppViewModel, onBack: () -> Unit) {
                                         .size(30.dp)
                                         .clip(CircleShape)
                                         .background(if (ok) accent else Color.Transparent)
-                                        .border(1.5.dp, if (d == today) Snow else if (ok) accent else Color(0xFF3A3A40), CircleShape),
+                                        .border(1.5.dp, if (d == today) Snow else if (ok) accent else CardBorder, CircleShape),
                                     contentAlignment = Alignment.Center,
-                                ) { if (ok) Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(16.dp)) }
+                                ) { if (ok) Icon(Icons.Rounded.Check, null, tint = onAccent(accent), modifier = Modifier.size(16.dp)) }
                                 Text(com.lifeos.app.ui.Fmt.weekdayShort(d.dayOfWeek), color = GrayText, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
                             }
                         }
@@ -240,7 +242,7 @@ fun HabitsScreen(vm: AppViewModel, onBack: () -> Unit) {
 
                     if (planned != null) {
                         val share = (doneInPlan.toFloat() / planned).coerceIn(0f, 1f)
-                        Box(Modifier.fillMaxWidth().padding(top = 8.dp).height(8.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF3A3A40))) {
+                        Box(Modifier.fillMaxWidth().padding(top = 8.dp).height(8.dp).clip(RoundedCornerShape(4.dp)).background(CardBorder)) {
                             Box(Modifier.fillMaxWidth(share.coerceAtLeast(0.02f)).height(8.dp).clip(RoundedCornerShape(4.dp)).background(accent))
                         }
                         Text(

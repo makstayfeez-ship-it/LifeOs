@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -28,6 +29,7 @@ import com.lifeos.app.ui.components.FormDialog
 import com.lifeos.app.ui.components.LifeBottomBar
 import com.lifeos.app.ui.components.LifeChip
 import com.lifeos.app.ui.components.LifeField
+import com.lifeos.app.ui.components.LocalQuickAdd
 import com.lifeos.app.ui.screens.AppsScreen
 import com.lifeos.app.ui.screens.AssistantChatScreen
 import com.lifeos.app.ui.screens.AssistantCheckScreen
@@ -44,6 +46,7 @@ import com.lifeos.app.ui.screens.GoalsScreen
 import com.lifeos.app.ui.screens.NavbarSettingsScreen
 import com.lifeos.app.ui.screens.LockScreen
 import com.lifeos.app.ui.screens.NotesScreen
+import com.lifeos.app.ui.screens.OnboardingScreen
 import com.lifeos.app.ui.screens.SecurityScreen
 import com.lifeos.app.ui.screens.WidgetsScreen
 import com.lifeos.app.ui.screens.ProfileScreen
@@ -69,7 +72,7 @@ fun AppNav(vm: AppViewModel) {
         val route = entry?.destination?.route
         var showAdd by remember { mutableStateOf(false) }
 
-        // Вошли — на главную, вышли — на регистрацию
+        // Вошли — на главную (в первый раз сначала знакомство), вышли — на регистрацию
         LaunchedEffect(loggedIn) {
             val current = nav.currentDestination?.route
             if (!loggedIn && current != "auth") {
@@ -77,8 +80,14 @@ fun AppNav(vm: AppViewModel) {
                     popUpTo(0) { inclusive = true }
                     launchSingleTop = true
                 }
-            } else if (loggedIn && current == "auth") {
-                nav.navigate("home") { popUpTo(0) { inclusive = true } }
+            } else if (loggedIn && (current == null || current == "auth" || current == "home")) {
+                // Настройки читаем напрямую: пока они грузятся, в состоянии стоит значение по умолчанию
+                val done = runCatching { vm.c.settings.current().onboardingDone }.getOrDefault(true)
+                if (!done) {
+                    nav.navigate("welcome") { popUpTo(0) { inclusive = true } }
+                } else if (current == "auth") {
+                    nav.navigate("home") { popUpTo(0) { inclusive = true } }
+                }
             }
         }
 
@@ -97,6 +106,7 @@ fun AppNav(vm: AppViewModel) {
         val showBar = route in NavCatalog.barRoutes(navItems)
 
         val locked by vm.locked.collectAsState()
+        CompositionLocalProvider(LocalQuickAdd provides { showAdd = true }) {
         Box {
         Scaffold(
             containerColor = Bg,
@@ -125,6 +135,11 @@ fun AppNav(vm: AppViewModel) {
                     .then(if (showBar) Modifier else Modifier.navigationBarsPadding()),
             ) {
                 composable("auth") { AuthScreen(vm) }
+                composable("welcome") {
+                    OnboardingScreen(vm) {
+                        nav.navigate("home") { popUpTo(0) { inclusive = true } }
+                    }
+                }
                 composable("home") { HomeScreen(vm, go) }
                 composable("apps") { AppsScreen(go) }
                 composable("reminders") { RemindersScreen(vm) { go("calendar") } }
@@ -155,6 +170,7 @@ fun AppNav(vm: AppViewModel) {
 
         // Экран блокировки закрывает всё приложение, пока не введён PIN или не приложен палец
         if (locked && loggedIn) LockScreen(vm)
+        }
         }
 
         if (showAdd && !(locked && loggedIn)) QuickAddDialog(vm) { showAdd = false }

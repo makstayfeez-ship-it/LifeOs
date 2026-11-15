@@ -195,6 +195,13 @@ object TextAssist {
         if (!ok) runCatching { notifyFallback(context) }
     }
 
+    /** Открывает строку помощника и кладёт в неё готовый текст (не отправляя): нажмите «Отправить». */
+    fun openWith(context: Context, text: String) {
+        val i = intent(context).setAction(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
+        val ok = runCatching { context.startActivity(i) }.isSuccess
+        if (!ok) runCatching { notifyFallback(context) }
+    }
+
     private fun notifyFallback(context: Context) {
         val pi = PendingIntent.getActivity(context, 9, intent(context), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val n = androidx.core.app.NotificationCompat.Builder(context, com.lifeos.app.LifeApp.CHANNEL_ALARM)

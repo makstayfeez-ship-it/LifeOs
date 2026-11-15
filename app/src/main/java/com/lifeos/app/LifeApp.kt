@@ -29,6 +29,8 @@ class LifeApp : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        // Стиль приложения нужен с первого кадра
+        com.lifeos.app.ui.theme.LifePalette.restore(this)
         createChannels()
         // Если приложение закрылось в момент, когда системные звуки были приглушены, возвращаем их
         SpeechMuter.restore(this)
@@ -37,6 +39,7 @@ class LifeApp : Application() {
             container.settings.flow.collect {
                 Beeps.enabled = it.recordBeeps
                 SpeechMuter.enabled = it.muteRecognizerBeep
+                com.lifeos.app.ui.theme.LifePalette.set(this@LifeApp, it.designStyle)
             }
         }
         // Утренний обзор на экране блокировки: ловим включение экрана (работает, пока приложение живо в памяти)

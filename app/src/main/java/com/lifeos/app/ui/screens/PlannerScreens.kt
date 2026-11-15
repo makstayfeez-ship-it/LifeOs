@@ -1,5 +1,6 @@
 package com.lifeos.app.ui.screens
 
+import com.lifeos.app.ui.theme.onAccent
 import androidx.compose.foundation.background
 import kotlinx.coroutines.delay
 import com.lifeos.app.audio.VoiceRecorder
@@ -194,7 +195,7 @@ private fun TaskRow(t: TaskEntity, onToggle: () -> Unit, onDelete: () -> Unit) {
                             .clickable(onClick = onToggle),
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (t.done) Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        if (t.done) Icon(Icons.Rounded.Check, null, tint = onAccent(accent), modifier = Modifier.size(18.dp))
                     }
                 }
                 IconButton(onClick = onDelete) { Icon(Icons.Rounded.Close, "Удалить", tint = GrayText) }
@@ -240,7 +241,7 @@ fun ShoppingScreen(vm: AppViewModel, onBack: () -> Unit) {
                         .border(1.5.dp, if (item.checked) accent else GrayText, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (item.checked) Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    if (item.checked) Icon(Icons.Rounded.Check, null, tint = onAccent(accent), modifier = Modifier.size(18.dp))
                 }
                 Text(
                     item.title,
@@ -358,7 +359,7 @@ fun NotesScreen(vm: AppViewModel, onBack: () -> Unit) {
                 Icon(
                     if (listening) Icons.Rounded.Close else Icons.Rounded.Mic,
                     contentDescription = "Записать голосом",
-                    tint = if (listening) accent else Color.White,
+                    tint = if (listening) accent else onAccent(accent),
                     modifier = Modifier.size(40.dp),
                 )
             }

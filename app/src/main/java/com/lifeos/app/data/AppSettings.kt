@@ -20,7 +20,17 @@ enum class VoiceType { MALE, FEMALE, CUSTOM }
 
 data class AppSettings(
     // Оформление
-    val accent: Int = 0,
+    val accent: Int = 1,
+    /** Стиль приложения: 0 тёмный (основной), 1 тёплый, 2 светлый. */
+    val designStyle: Int = 0,
+    /** Знакомство при первом входе пройдено или пропущено. */
+    val onboardingDone: Boolean = false,
+    /** Блоки главного экрана через запятую: tasks, habits, finance, notes, goal, morning. */
+    val homeBlocks: String = "tasks,habits,finance,notes,goal,morning",
+    /** Кнопка быстрой голосовой заметки на главной. */
+    val notesButton: Boolean = true,
+    /** Дни недели утреннего обзора: битовая маска, бит 0 — понедельник, бит 6 — воскресенье. */
+    val morningDays: Int = 127,
     // Помощник
     val assistantName: String = "LifeOS",
     val voiceType: VoiceType = VoiceType.FEMALE,
@@ -85,6 +95,11 @@ private val Context.settingsStore by preferencesDataStore(name = "lifeos_setting
 
 private object K {
     val accent = intPreferencesKey("accent")
+    val designStyle = intPreferencesKey("design_style")
+    val onboardingDone = booleanPreferencesKey("onboarding_done")
+    val homeBlocks = stringPreferencesKey("home_blocks")
+    val notesButton = booleanPreferencesKey("notes_button")
+    val morningDays = intPreferencesKey("morning_days")
     val assistantName = stringPreferencesKey("assistant_name")
     val voiceType = stringPreferencesKey("voice_type")
     val customPitch = floatPreferencesKey("custom_pitch")
@@ -138,6 +153,11 @@ private fun Preferences.toSettings(): AppSettings {
     val d = AppSettings()
     return AppSettings(
         accent = this[K.accent] ?: d.accent,
+        designStyle = this[K.designStyle] ?: d.designStyle,
+        onboardingDone = this[K.onboardingDone] ?: d.onboardingDone,
+        homeBlocks = this[K.homeBlocks] ?: d.homeBlocks,
+        notesButton = this[K.notesButton] ?: d.notesButton,
+        morningDays = this[K.morningDays] ?: d.morningDays,
         assistantName = this[K.assistantName] ?: d.assistantName,
         voiceType = runCatching { VoiceType.valueOf(this[K.voiceType] ?: "") }.getOrDefault(d.voiceType),
         customPitch = this[K.customPitch] ?: d.customPitch,
@@ -190,6 +210,11 @@ private fun Preferences.toSettings(): AppSettings {
 
 private fun MutablePreferences.write(s: AppSettings) {
     this[K.accent] = s.accent
+    this[K.designStyle] = s.designStyle
+    this[K.onboardingDone] = s.onboardingDone
+    this[K.homeBlocks] = s.homeBlocks
+    this[K.notesButton] = s.notesButton
+    this[K.morningDays] = s.morningDays
     this[K.assistantName] = s.assistantName
     this[K.voiceType] = s.voiceType.name
     this[K.customPitch] = s.customPitch

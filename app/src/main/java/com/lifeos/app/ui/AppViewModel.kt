@@ -262,7 +262,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             c.settings.update(block)
             val s = c.settings.current()
-            if (s.morningEnabled) BriefScheduler.schedule(getApplication(), s.morningHour, s.morningMinute)
+            if (s.morningEnabled) BriefScheduler.schedule(getApplication(), s.morningHour, s.morningMinute, s.morningDays)
             else BriefScheduler.cancel(getApplication())
         }
     }

@@ -61,6 +61,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lifeos.app.assistant.AssistantControl
@@ -69,6 +70,7 @@ import com.lifeos.app.ui.AppViewModel
 import com.lifeos.app.ui.Fmt
 import com.lifeos.app.ui.components.InfoCard
 import com.lifeos.app.ui.components.LabelPill
+import com.lifeos.app.ui.components.LocalQuickAdd
 import com.lifeos.app.ui.components.LifeField
 import com.lifeos.app.ui.components.LifeScreen
 import com.lifeos.app.ui.components.EmptyHint
@@ -78,22 +80,17 @@ import com.lifeos.app.ui.components.SectionTitle
 import com.lifeos.app.ui.rememberMicRequest
 import com.lifeos.app.ui.theme.Bg
 import com.lifeos.app.ui.theme.lifeBackground
+import com.lifeos.app.ui.theme.CardBorder
 import com.lifeos.app.ui.theme.CardColor
+import com.lifeos.app.ui.theme.LifePalette
+import com.lifeos.app.ui.theme.LifeStyle
+import com.lifeos.app.ui.theme.onAccent
 import com.lifeos.app.ui.theme.GrayText
 import com.lifeos.app.ui.theme.LocalAccent
 import com.lifeos.app.ui.theme.Snow
+import java.time.Instant
 import java.time.LocalDate
-
-@Composable
-private fun greetingWord(): String {
-    val h = java.time.LocalTime.now().hour
-    return when (h) {
-        in 5..11 -> "Доброе утро,"
-        in 12..17 -> "Добрый день,"
-        in 18..22 -> "Добрый вечер,"
-        else -> "Доброй ночи,"
-    }
-}
+import java.time.ZoneId
 
 /** Плитка раздела: иконка в акцентном цвете и подпись. */
 @Composable
@@ -118,6 +115,10 @@ fun HomeScreen(vm: AppViewModel, go: (String) -> Unit) {
     val settings by vm.settings.collectAsState()
     val user by vm.user.collectAsState()
     val tasks by vm.tasks.collectAsState()
+    val expenses by vm.expenses.collectAsState()
+    val habits by vm.habits.collectAsState()
+    val logs by vm.habitLogs.collectAsState()
+    val notes by vm.notes.collectAsState()
     val goals = remember(settings.goalsJson) { com.lifeos.app.data.GoalsCodec.decode(settings.goalsJson) }
     val activeGoal = goals.firstOrNull { it.result == 0 && it.year >= LocalDate.now().year }
     var reviewGoal by remember { mutableStateOf<com.lifeos.app.data.Goal?>(null) }
@@ -125,131 +126,53 @@ fun HomeScreen(vm: AppViewModel, go: (String) -> Unit) {
     LaunchedEffect(settings.goalsJson) {
         dueGoal(goals)?.let { if (reviewGoal == null) reviewGoal = it }
     }
-    val accent = LocalAccent.current
     val callRobot = rememberMicRequest { AssistantControl.summon(context) }
     val remindVoice = rememberMicRequest { AssistantControl.remind(context) }
     // Мгновенная голосовая заметка: одно нажатие, говорите, окно само закроется
     val quickNote = rememberMicRequest {
         context.startActivity(Intent(context, QuickNoteActivity::class.java))
     }
+    val addQuick = LocalQuickAdd.current
 
     val today = LocalDate.now()
     val todays = tasks.filter { it.epochDay == today.toEpochDay() }
-    val events = todays.count { it.isEvent }
-    val open = todays.count { !it.isEvent && !it.done }
+    val zone = ZoneId.systemDefault()
+    val spent = expenses
+        .filter { !it.income && Instant.ofEpochMilli(it.createdAt).atZone(zone).toLocalDate() == today }
+        .sumOf { it.amountRub }
+    val habitIds = habits.map { it.id }.toSet()
+    val habitsDone = logs.count { it.epochDay == today.toEpochDay() && it.habitId in habitIds }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .lifeBackground()
-            .statusBarsPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(greetingWord(), color = GrayText, style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    user?.name?.ifBlank { "друг" } ?: "друг",
-                    color = Snow,
-                    style = MaterialTheme.typography.headlineLarge,
-                )
-            }
-            Box(
-                Modifier.size(48.dp).clip(CircleShape).background(CardColor).clickable { quickNote() },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Rounded.StickyNote2, contentDescription = "Быстрая голосовая заметка", tint = accent)
-            }
-            AssistantCallButton(
-                accent = accent,
-                onVoice = { callRobot() },
-                onText = { com.lifeos.app.assistant.TextAssist.open(context) },
-                onRemind = { remindVoice() },
-                modifier = Modifier.padding(start = 10.dp),
-            )
-        }
-        Box(Modifier.padding(bottom = 16.dp))
+    // Если помощнику чего-то не хватает, говорим об этом сразу, а не оставляем его молча не работать
+    val resumeTick = com.lifeos.app.ui.rememberResumeTick()
+    val problems = remember(resumeTick, settings.wakeEnabled) { assistantProblems(context, settings.wakeEnabled) }
 
-        // Если помощнику чего-то не хватает, говорим об этом сразу, а не оставляем его молча не работать
-        val resumeTick = com.lifeos.app.ui.rememberResumeTick()
-        val problems = remember(resumeTick, settings.wakeEnabled) { assistantProblems(context, settings.wakeEnabled) }
-        if (problems > 0) {
-            OutlineCard(Modifier.fillMaxWidth().padding(bottom = 16.dp), onClick = { go("assistant_check") }) {
-                Text("Помощник пока не готов", color = Snow, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Не хватает: $problems. Нажмите, чтобы проверить и включить",
-                    color = GrayText,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-        }
-
-        OutlineCard(Modifier.fillMaxWidth(), onClick = { go("calendar") }) {
-            Text("Сегодня · ${Fmt.dayMonth(today)}", color = GrayText)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    Fmt.plural(todays.size, "дело", "дела", "дел"),
-                    color = Snow,
-                    style = MaterialTheme.typography.headlineLarge,
-                    modifier = Modifier.weight(1f),
-                )
-                Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = accent)
-            }
-            Text(
-                "${Fmt.plural(events, "событие", "события", "событий")} • ${Fmt.plural(open, "задача", "задачи", "задач")}",
-                color = GrayText,
-            )
-        }
-
-        Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            AppTile("Календарь", Icons.Rounded.CalendarMonth, { go("calendar") }, Modifier.weight(1f))
-            AppTile("Привычки", Icons.Rounded.Loop, { go("habits") }, Modifier.weight(1f))
-            AppTile("Финансы", Icons.Rounded.AccountBalanceWallet, { go("finance") }, Modifier.weight(1f))
-            AppTile("Заметки", Icons.Rounded.StickyNote2, { go("notes") }, Modifier.weight(1f))
-        }
-
-        Row(
-            Modifier
-                .padding(top = 14.dp)
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(22.dp))
-                .background(CardColor)
-                .clickable { go("goals") }
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("Цель на год", color = GrayText, style = MaterialTheme.typography.bodySmall)
-                Text(
-                    activeGoal?.let { it.emoji + " " + it.title } ?: "Поставьте цель на год",
-                    color = Snow,
-                    style = MaterialTheme.typography.titleMedium,
-                )
-            }
-            if (activeGoal != null && activeGoal.hasTarget) {
-                ProgressRing(activeGoal.fraction, "${activeGoal.percent}%", Modifier.size(56.dp))
-            }
-        }
-
-        Row(
-            Modifier
-                .padding(top = 14.dp)
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(22.dp))
-                .background(CardColor)
-                .clickable { go("morning") }
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Rounded.WbSunny, contentDescription = null, tint = accent, modifier = Modifier.size(28.dp))
-            Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                Text("Утренний обзор", color = Snow, style = MaterialTheme.typography.titleMedium)
-                Text("Погода, дела и расходы на сегодня", color = GrayText, style = MaterialTheme.typography.bodySmall)
-            }
-            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = GrayText)
-        }
+    val state = HomeState(
+        name = user?.name?.ifBlank { "друг" } ?: "друг",
+        todays = todays,
+        events = todays.count { it.isEvent },
+        open = todays.count { !it.isEvent && !it.done },
+        spent = spent,
+        habitsDone = habitsDone,
+        habitsTotal = habits.size,
+        notesCount = notes.size,
+        goal = activeGoal,
+        blocks = homeBlockSet(settings.homeBlocks),
+        notesButton = settings.notesButton,
+        problems = problems,
+        go = go,
+        toggleTask = { vm.toggleTask(it) },
+        onVoice = { callRobot() },
+        onText = { com.lifeos.app.assistant.TextAssist.open(context) },
+        onRemind = { remindVoice() },
+        onQuickNote = { quickNote() },
+        onPrompt = { com.lifeos.app.assistant.TextAssist.openWith(context, it) },
+        onAdd = addQuick,
+    )
+    when (LifePalette.style) {
+        LifeStyle.DARK -> HomeDark(state)
+        LifeStyle.WARM -> HomeWarm(state)
+        LifeStyle.LIGHT -> HomeLight(state)
     }
 
     reviewGoal?.let { g -> GoalReviewDialog(vm, g, onClose = { reviewGoal = null }) }
@@ -261,21 +184,24 @@ fun HomeScreen(vm: AppViewModel, go: (String) -> Unit) {
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun AssistantCallButton(
+internal fun AssistantCallButton(
     accent: Color,
     onVoice: () -> Unit,
     onText: () -> Unit,
     onRemind: () -> Unit,
     modifier: Modifier = Modifier,
+    size: Dp = 48.dp,
+    bg: Color = accent,
+    tint: Color = onAccent(accent),
 ) {
     var menu by remember { mutableStateOf(false) }
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     Box(modifier) {
         Box(
             Modifier
-                .size(48.dp)
+                .size(size)
                 .clip(CircleShape)
-                .background(accent)
+                .background(bg)
                 .combinedClickable(
                     onClick = onVoice,
                     onLongClick = {
@@ -285,7 +211,7 @@ private fun AssistantCallButton(
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Rounded.Mic, contentDescription = "Позвать помощника", tint = Color.White)
+            Icon(Icons.Rounded.Mic, contentDescription = "Позвать помощника", tint = tint)
         }
         androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             androidx.compose.material3.DropdownMenuItem(
@@ -316,45 +242,13 @@ fun ProgressRing(fraction: Float, label: String, modifier: Modifier = Modifier, 
             val w = stroke * density
             val inset = w / 2
             val arcSize = Size(size.width - w, size.height - w)
-            drawArc(Color(0xFF3A3A40), 0f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(w))
+            drawArc(CardBorder, 0f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(w))
             drawArc(
                 accent, -90f, 360f * fraction.coerceIn(0f, 1f), false, Offset(inset, inset), arcSize,
                 style = Stroke(w, cap = StrokeCap.Round),
             )
         }
         Text(label, color = Snow, fontSize = 13.sp)
-    }
-}
-
-@Composable
-fun AppsScreen(go: (String) -> Unit) {
-    LifeScreen("Приложения") {
-        val items = listOf(
-            Triple("Календарь", Icons.Rounded.CalendarMonth, "calendar"),
-            Triple("Задачи", Icons.Rounded.CheckCircle, "calendar"),
-            Triple("Финансы", Icons.Rounded.AccountBalanceWallet, "finance"),
-            Triple("Покупки", Icons.Rounded.ShoppingCart, "shopping"),
-            Triple("Привычки", Icons.Rounded.Loop, "habits"),
-            Triple("Цели на год", Icons.Rounded.Flag, "goals"),
-            Triple("Уведомления", Icons.Rounded.Notifications, "reminders"),
-            Triple("Профиль", Icons.Rounded.Person, "profile"),
-            Triple("Заметки", Icons.Rounded.StickyNote2, "notes"),
-            Triple("ИИ-помощник", Icons.Rounded.AutoAwesome, "assistant"),
-            Triple("Утренний обзор", Icons.Rounded.WbSunny, "morning"),
-            Triple("Магазин роботов", Icons.Rounded.Storefront, "shop"),
-            Triple("Оформление", Icons.Rounded.Palette, "theme"),
-            Triple("Виджеты", Icons.Rounded.Widgets, "widgets"),
-            Triple("Безопасность", Icons.Rounded.Lock, "security"),
-            Triple("Аккаунт", Icons.Rounded.Settings, "account"),
-        )
-        items.chunked(3).forEach { row ->
-            Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                row.forEach { (label, icon, route) ->
-                    AppTile(label, icon, { go(route) }, Modifier.weight(1f))
-                }
-                repeat(3 - row.size) { Box(Modifier.weight(1f)) }
-            }
-        }
     }
 }
 
