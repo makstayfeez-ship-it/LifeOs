@@ -23,6 +23,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -30,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.lifeos.app.container
 import com.lifeos.app.data.AppSettings
@@ -51,6 +55,30 @@ import kotlinx.coroutines.delay
  * Это самый надёжный способ вызова: он не зависит от того, слышит ли телефон слово «LifeOS».
  */
 class LifeVoiceInteractionService : VoiceInteractionService()
+
+/**
+ * Пустой распознаватель речи. Android проверяет, что у системного помощника описан распознаватель,
+ * иначе выбор помощника в настройках сразу сбрасывается. Сами мы речь через него не распознаём,
+ * поэтому другим приложениям он честно отвечает ошибкой.
+ */
+class LifeRecognitionService : android.speech.RecognitionService() {
+    override fun onStartListening(recognizerIntent: Intent?, listener: android.speech.RecognitionService.Callback?) {
+        runCatching { listener?.error(android.speech.SpeechRecognizer.ERROR_CLIENT) }
+    }
+
+    override fun onCancel(listener: android.speech.RecognitionService.Callback?) {}
+
+    override fun onStopListening(listener: android.speech.RecognitionService.Callback?) {}
+}
+
+/** Есть ли на телефоне настоящий распознаватель речи (не наша пустая заглушка). */
+object Recognizers {
+    fun available(context: Context): Boolean = runCatching {
+        context.packageManager
+            .queryIntentServices(Intent(android.speech.RecognitionService.SERVICE_INTERFACE), 0)
+            .any { it.serviceInfo.packageName != context.packageName }
+    }.getOrDefault(false)
+}
 
 class LifeVoiceSessionService : VoiceInteractionSessionService() {
     override fun onNewSession(args: Bundle?): VoiceInteractionSession = LifeVoiceSession(this)
@@ -177,10 +205,51 @@ object SystemAssistant {
         }.getOrDefault(false)
     }
 
+    /** Системное окно «Сделать LifeOS помощником по умолчанию?» (Android 10+). null, если его показать нельзя. */
+    fun roleIntent(context: Context): Intent? {
+        if (android.os.Build.VERSION.SDK_INT < 29) return null
+        return runCatching {
+            val rm = context.getSystemService(Context.ROLE_SERVICE) as android.app.role.RoleManager
+            if (rm.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT) && !rm.isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT)) {
+                rm.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT)
+            } else {
+                null
+            }
+        }.getOrNull()
+    }
+
+    fun openSettings(context: Context) {
+        runCatching { context.startActivity(settingsIntent()) }
+            .onFailure { runCatching { context.startActivity(fallbackSettingsIntent()) } }
+    }
+
     /** Открывает настройки, где выбирается помощник по умолчанию. */
     fun settingsIntent(): Intent =
         Intent(Settings.ACTION_VOICE_INPUT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     fun fallbackSettingsIntent(): Intent =
         Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+}
+
+/**
+ * Кнопка «Выбрать помощником»: сначала системное окно с подтверждением, а если Android его не показывает
+ * (окно закрылось сразу или его нет), обычные настройки «Цифровой помощник».
+ */
+@Composable
+fun rememberPickAssistant(): () -> Unit {
+    val context = LocalContext.current
+    val startedAt = remember { longArrayOf(0L) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (!SystemAssistant.isDefault(context) && System.currentTimeMillis() - startedAt[0] < 700) {
+            SystemAssistant.openSettings(context)
+        }
+    }
+    return {
+        val intent = SystemAssistant.roleIntent(context)
+        val launched = intent != null && runCatching {
+            startedAt[0] = System.currentTimeMillis()
+            launcher.launch(intent)
+        }.isSuccess
+        if (!launched) SystemAssistant.openSettings(context)
+    }
 }

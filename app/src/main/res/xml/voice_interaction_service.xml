@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:recognitionService="com.lifeos.app.assistant.LifeRecognitionService"
     android:sessionService="com.lifeos.app.assistant.LifeVoiceSessionService"
     android:supportsAssist="true"
     android:supportsLaunchVoiceAssistFromKeyguard="true" />

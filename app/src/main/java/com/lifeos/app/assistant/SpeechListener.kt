@@ -43,7 +43,7 @@ class SpeechListener(private val context: Context) {
     private val main = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
 
-    private fun googleAvailable(): Boolean = SpeechRecognizer.isRecognitionAvailable(context)
+    private fun googleAvailable(): Boolean = Recognizers.available(context)
 
     /** Есть ли хоть один способ распознать речь: офлайн-модель или служба Google. */
     fun available(): Boolean = VoskModel.isReady(context) || googleAvailable()

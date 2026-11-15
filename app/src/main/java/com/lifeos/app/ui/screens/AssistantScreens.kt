@@ -336,6 +336,7 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () ->
         // Показываем только то, что ещё не выдано: выданные разрешения исчезают
         var triedAccess by remember { mutableStateOf(false) }
         val missing = !overlayOk || !watcherOk || !assistantOk || !(contactsOk && callOk)
+        val pickAssistant = com.lifeos.app.assistant.rememberPickAssistant()
         if (missing) SectionTitle("Нужно разрешить")
         if (!overlayOk) {
             PermissionRow("Поверх других приложений", "Робот на экране, будильник из фона", false) {
@@ -345,8 +346,7 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () ->
         if (!assistantOk) {
             // Этот способ не упирается в «ограниченные настройки»: вызов кнопкой питания или жестом от угла экрана, плюс чтение экрана
             PermissionRow("Вызов кнопкой питания или жестом", "Выберите LifeOS помощником по умолчанию", false) {
-                runCatching { context.startActivity(com.lifeos.app.assistant.SystemAssistant.settingsIntent()) }
-                    .onFailure { runCatching { context.startActivity(com.lifeos.app.assistant.SystemAssistant.fallbackSettingsIntent()) } }
+                pickAssistant()
             }
         }
         if (!watcherOk) {

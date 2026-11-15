@@ -63,9 +63,10 @@ fun AssistantCheckScreen(vm: AppViewModel, onBack: () -> Unit) {
     val micOk = remember(tick, status.updatedAt) { AssistantControl.hasMic(context) }
     val vosk by VoskModel.state.collectAsState()
     val voskReady = remember(tick, vosk) { VoskModel.isReady(context) }
-    val googleOk = remember(tick) { SpeechRecognizer.isRecognitionAvailable(context) }
+    val googleOk = remember(tick) { com.lifeos.app.assistant.Recognizers.available(context) }
     val recognizerOk = voskReady || googleOk
     val systemDefault = remember(tick) { SystemAssistant.isDefault(context) }
+    val pickAssistant = com.lifeos.app.assistant.rememberPickAssistant()
     val overlayOk = remember(tick) { Perms.canOverlay(context) }
     val watcherOk = remember(tick) { Perms.watcherEnabled(context) }
     val batteryOk = remember(tick) {
@@ -228,14 +229,11 @@ fun AssistantCheckScreen(vm: AppViewModel, onBack: () -> Unit) {
             } else {
                 PillButton(
                     "Выбрать помощником",
-                    {
-                        runCatching { context.startActivity(SystemAssistant.settingsIntent()) }
-                            .onFailure { runCatching { context.startActivity(SystemAssistant.fallbackSettingsIntent()) } }
-                    },
+                    { pickAssistant() },
                     Modifier.padding(top = 10.dp),
                 )
                 Text(
-                    "Откроются настройки: выберите «Цифровой помощник» → LifeOS.",
+                    "Android спросит подтверждение. Если не спросит, откроются настройки.",
                     color = GrayText,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 6.dp),

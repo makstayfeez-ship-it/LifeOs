@@ -181,6 +181,16 @@
             android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
 
+        <!-- Заглушка: Android требует описать распознаватель речи у системного помощника, иначе выбор помощника сбрасывается -->
+        <service
+            android:name=".assistant.LifeRecognitionService"
+            android:exported="true"
+            android:label="LifeOS">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+            </intent-filter>
+        </service>
+
         <!-- Ждёт включения экрана, чтобы показать утренний обзор поверх блокировки (живёт от утреннего сигнала до показа) -->
         <service
             android:name=".brief.MorningWatchService"
