@@ -6,6 +6,9 @@ import android.content.ComponentName
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.ui.draw.alpha
+import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -25,6 +28,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -87,13 +91,14 @@ import com.lifeos.app.ui.theme.lifeBackground
 import com.lifeos.app.ui.theme.onAccent
 import androidx.compose.ui.graphics.vector.ImageVector
 
-private const val STEPS = 6
+private const val STEPS = 7
 
 /** Канонический порядок блоков главного экрана. */
 private val HomeKeys = listOf("tasks", "habits", "finance", "notes", "goal", "morning")
 
 private val BotLines = listOf(
     "Привет! Я твой помощник. Давай настроим меня и проверим",
+    "Нельзя говорить? Зови меня жестом, и я открою тихий чат",
     "Заметки — это быстро. Попробуй сказать",
     "Я напомню вовремя. Скажи, о чём",
     "Выбери, что видеть на главной",
@@ -102,7 +107,7 @@ private val BotLines = listOf(
 )
 
 /** С какой стороны от робота стоит реплика на каждом шаге. */
-private val BubbleLeft = listOf(true, false, true, false, true, true)
+private val BubbleLeft = listOf(true, false, true, false, true, false, true)
 
 private val DayNames = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
 
@@ -273,10 +278,11 @@ private fun StepPage(step: Int, vm: AppViewModel, settings: AppSettings, onNext:
                 Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
                     when (step) {
                         0 -> StepAssistant(vm, settings)
-                        1 -> StepNotes(vm, settings)
-                        2 -> StepReminders(vm, settings)
-                        3 -> StepHome(vm, settings)
-                        4 -> StepMorning(vm, settings)
+                        1 -> StepChat(vm, settings)
+                        2 -> StepNotes(vm, settings)
+                        3 -> StepReminders(vm, settings)
+                        4 -> StepHome(vm, settings)
+                        5 -> StepMorning(vm, settings)
                         else -> StepLook(vm, settings)
                     }
                 }
@@ -312,6 +318,7 @@ private class StepInfo(val icon: ImageVector, val title: String, val subtitle: S
 
 private val StepInfos = listOf(
     StepInfo(Icons.Rounded.AutoAwesome, "ИИ-помощник", "Настрой и проверь, как он работает"),
+    StepInfo(Icons.Rounded.Keyboard, "Тихий чат", "Вызов без голоса: кнопкой или жестом"),
     StepInfo(Icons.Rounded.StickyNote2, "Заметки", "Диктуй мысли, пока заняты руки"),
     StepInfo(Icons.Rounded.Notifications, "Напоминания", "Не забудешь ни про что"),
     StepInfo(Icons.Rounded.Widgets, "Главный экран", "Что показывать сразу"),
@@ -475,7 +482,163 @@ private fun CheckRow(text: String, state: Int) {
     }
 }
 
-// ---------------------------------------------------------------- шаги 2 и 3: примеры
+// ---------------------------------------------------------------- шаг 2: тихий чат жестом
+
+/** Анимированный показ: удерживаем кнопку питания, и снизу на экране выезжает чат. */
+@Composable
+private fun GestureDemo() {
+    val accent = LocalAccent.current
+    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "gesture-demo")
+    val p by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            androidx.compose.animation.core.tween(4400, easing = androidx.compose.animation.core.LinearEasing),
+        ),
+        label = "gesture-progress",
+    )
+    val pressing = p in 0.08f..0.40f
+    val appear = ((p - 0.44f) / 0.10f).coerceIn(0f, 1f)
+    val barAlpha = appear * (1f - ((p - 0.90f) / 0.08f).coerceIn(0f, 1f))
+    val body = RoundedCornerShape(22.dp)
+
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(width = 116.dp, height = 196.dp)) {
+            Box(
+                Modifier
+                    .size(width = 106.dp, height = 196.dp)
+                    .clip(body)
+                    .background(Bg)
+                    .border(2.dp, GrayText, body),
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    repeat(4) { i ->
+                        Box(
+                            Modifier
+                                .fillMaxWidth(if (i % 2 == 0) 0.85f else 0.6f)
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(CardBorder),
+                        )
+                    }
+                }
+                Box(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(start = 8.dp, end = 8.dp, bottom = 10.dp)
+                        .offset(y = ((1f - appear) * 22f).dp)
+                        .alpha(barAlpha)
+                        .fillMaxWidth()
+                        .height(30.dp)
+                        .clip(CircleShape)
+                        .background(CardColor)
+                        .border(1.5.dp, accent, CircleShape),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Text("Спросите…", color = GrayText, fontSize = 10.sp, modifier = Modifier.padding(start = 12.dp))
+                }
+            }
+            // Кнопка питания на правом ребре: при нажатии загорается
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 56.dp)
+                    .size(width = 6.dp, height = 40.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(if (pressing) accent else GrayText),
+            )
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            DemoCaption("1", "Удержите кнопку питания 1–2 секунды", pressing)
+            DemoCaption("2", "Снизу появится тихий чат", appear > 0.5f)
+        }
+    }
+}
+
+@Composable
+private fun DemoCaption(number: String, text: String, active: Boolean) {
+    val accent = LocalAccent.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.size(24.dp).clip(CircleShape).background(if (active) accent else Bg).border(1.dp, if (active) accent else CardBorder, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(number, color = if (active) onAccent(accent) else GrayText, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        }
+        Text(text, color = if (active) Snow else GrayText, fontSize = 14.sp, modifier = Modifier.padding(start = 10.dp))
+    }
+}
+
+@Composable
+private fun StepChat(vm: AppViewModel, s: AppSettings) {
+    val context = LocalContext.current
+    val accent = LocalAccent.current
+    val tick = rememberResumeTick()
+    val isDefault = remember(tick) { com.lifeos.app.assistant.SystemAssistant.isDefault(context) }
+    val pick = com.lifeos.app.assistant.rememberPickAssistant()
+
+    Label("КАК ВЫЗВАТЬ")
+    GestureDemo()
+    Text(
+        "Можно и жестом от угла экрана, если телефон так умеет.",
+        color = GrayText,
+        fontSize = 13.sp,
+        modifier = Modifier.padding(top = 4.dp),
+    )
+
+    Label("НАСТРОЙКА")
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(Bg)
+            .border(1.dp, if (isDefault) CardBorder else accent, shape)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (isDefault) {
+            Box(Modifier.size(28.dp).clip(CircleShape).background(accent), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Check, null, tint = onAccent(accent), modifier = Modifier.size(16.dp))
+            }
+        } else {
+            Box(Modifier.size(28.dp).clip(CircleShape).border(1.5.dp, CardBorder, CircleShape))
+        }
+        Text(
+            if (isDefault) "LifeOS выбран помощником" else "Выберите LifeOS помощником",
+            color = Snow,
+            fontSize = 15.sp,
+            modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+        )
+        if (!isDefault) LifeChip("Выбрать", true, { pick() })
+    }
+    if (isDefault) {
+        PillButton(
+            "Попробовать чат сейчас",
+            { com.lifeos.app.assistant.TextAssist.open(context) },
+            Modifier.fillMaxWidth().padding(top = 10.dp),
+            outlined = true,
+        )
+    }
+
+    Label("ЧТО ОТКРЫВАТЬ ПО ЖЕСТУ")
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        LifeChip("Чат, бесшумно", s.gestureChat, { vm.update { it.copy(gestureChat = true) } }, Modifier.weight(1f))
+        LifeChip("Робот, голосом", !s.gestureChat, { vm.update { it.copy(gestureChat = false) } }, Modifier.weight(1f))
+    }
+    Text(
+        "Не открывается? Настройки телефона → поиск «кнопка питания» → цифровой помощник.",
+        color = GrayText,
+        fontSize = 13.sp,
+        modifier = Modifier.padding(top = 10.dp),
+    )
+}
+
+// ---------------------------------------------------------------- шаги 3 и 4: примеры
 
 @Composable
 private fun SayRow(text: String) {

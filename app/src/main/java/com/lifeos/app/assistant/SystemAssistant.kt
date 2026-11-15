@@ -119,6 +119,13 @@ class AssistLaunchActivity : ComponentActivity() {
         setShowWhenLocked(true)
         setTurnScreenOn(true)
         SystemAssistant.mark(this, SystemAssistant.KEY_ACTIVITY)
+        // По умолчанию кнопка питания и жест открывают тихий чат: писать, вставлять фото, спрашивать про экран.
+        // Кнопка гарнитуры (VOICE_COMMAND) остаётся голосовой.
+        if (SystemAssistant.chatMode(this) && intent?.action != Intent.ACTION_VOICE_COMMAND) {
+            TextAssist.open(this)
+            finish()
+            return
+        }
         if (!AssistantControl.hasMic(this)) {
             // Нет доступа к микрофону: открываем приложение, оно попросит разрешение
             startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -179,6 +186,14 @@ object SystemAssistant {
     /** Запоминает, когда система позвала помощника: по этому на экране проверки видно, доходит ли вызов кнопкой питания. */
     fun mark(context: Context, key: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong(key, System.currentTimeMillis()).apply()
+    }
+
+    /** Что открывать по жесту: тихий чат (по умолчанию) или робота. Хранится отдельно, чтобы читать мгновенно. */
+    fun chatMode(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("chat", true)
+
+    fun setChatMode(context: Context, on: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("chat", on).apply()
     }
 
     fun last(context: Context, key: String): Long =

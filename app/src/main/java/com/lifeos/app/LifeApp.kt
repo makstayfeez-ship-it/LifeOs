@@ -40,6 +40,7 @@ class LifeApp : Application() {
                 Beeps.enabled = it.recordBeeps
                 SpeechMuter.enabled = it.muteRecognizerBeep
                 com.lifeos.app.ui.theme.LifePalette.set(this@LifeApp, it.designStyle)
+                    com.lifeos.app.assistant.SystemAssistant.setChatMode(this@LifeApp, it.gestureChat)
             }
         }
         // Утренний обзор на экране блокировки: ловим включение экрана (работает, пока приложение живо в памяти)

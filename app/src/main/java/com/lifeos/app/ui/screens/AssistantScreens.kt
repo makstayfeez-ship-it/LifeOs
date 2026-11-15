@@ -331,6 +331,11 @@ fun AssistantSettingsScreen(vm: AppViewModel, onBack: () -> Unit, onCheck: () ->
             { on -> vm.update { it.copy(robotEnabled = on) } },
             subtitle = "Без этого помощник только отвечает голосом.",
         )
+        SectionTitle("Кнопка питания и жест открывают")
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LifeChip("Чат, бесшумно", s.gestureChat, { vm.update { it.copy(gestureChat = true) } })
+            LifeChip("Робота, голосом", !s.gestureChat, { vm.update { it.copy(gestureChat = false) } })
+        }
         PillButton("Позвать сейчас", { callNow() }, Modifier.padding(top = 8.dp), outlined = true)
 
         // Показываем только то, что ещё не выдано: выданные разрешения исчезают

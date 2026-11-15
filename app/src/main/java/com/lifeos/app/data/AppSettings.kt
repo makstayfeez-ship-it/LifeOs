@@ -31,6 +31,8 @@ data class AppSettings(
     val notesButton: Boolean = true,
     /** Дни недели утреннего обзора: битовая маска, бит 0 — понедельник, бит 6 — воскресенье. */
     val morningDays: Int = 127,
+    /** Что открывает вызов помощника кнопкой питания или жестом: true — тихий чат, false — робот с голосом. */
+    val gestureChat: Boolean = true,
     // Помощник
     val assistantName: String = "LifeOS",
     val voiceType: VoiceType = VoiceType.FEMALE,
@@ -100,6 +102,7 @@ private object K {
     val homeBlocks = stringPreferencesKey("home_blocks")
     val notesButton = booleanPreferencesKey("notes_button")
     val morningDays = intPreferencesKey("morning_days")
+    val gestureChat = booleanPreferencesKey("gesture_chat")
     val assistantName = stringPreferencesKey("assistant_name")
     val voiceType = stringPreferencesKey("voice_type")
     val customPitch = floatPreferencesKey("custom_pitch")
@@ -158,6 +161,7 @@ private fun Preferences.toSettings(): AppSettings {
         homeBlocks = this[K.homeBlocks] ?: d.homeBlocks,
         notesButton = this[K.notesButton] ?: d.notesButton,
         morningDays = this[K.morningDays] ?: d.morningDays,
+        gestureChat = this[K.gestureChat] ?: d.gestureChat,
         assistantName = this[K.assistantName] ?: d.assistantName,
         voiceType = runCatching { VoiceType.valueOf(this[K.voiceType] ?: "") }.getOrDefault(d.voiceType),
         customPitch = this[K.customPitch] ?: d.customPitch,
@@ -215,6 +219,7 @@ private fun MutablePreferences.write(s: AppSettings) {
     this[K.homeBlocks] = s.homeBlocks
     this[K.notesButton] = s.notesButton
     this[K.morningDays] = s.morningDays
+    this[K.gestureChat] = s.gestureChat
     this[K.assistantName] = s.assistantName
     this[K.voiceType] = s.voiceType.name
     this[K.customPitch] = s.customPitch
