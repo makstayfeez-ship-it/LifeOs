@@ -11,15 +11,21 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -84,12 +90,19 @@ class RobotOverlay(private val context: Context) {
     /** Нажатие на робота — отпустить его. */
     var onTap: () -> Unit = {}
 
+    /** Нажали на один из кружков, которые появляются при удержании: [MENU_SILENT], [MENU_NOTE], [MENU_REMIND]. */
+    var onMenu: (String) -> Unit = {}
+    private var menuJob: Job? = null
+    private var holding = false
+    private var topSpace = false
+
     private var skin by mutableStateOf<RobotSkin>(SkinCatalog.default)
-    private var mood by mutableStateOf(RobotMood.HAPPY)
+    private var currentMood by mutableStateOf(RobotMood.HAPPY)
     private var bubble by mutableStateOf<String?>(null)
     private var walking by mutableStateOf(false)
     private var facingRight by mutableStateOf(true)
     private var visible by mutableStateOf(false)
+    private var menuOpen by mutableStateOf(false)
 
     private fun dp(v: Int) = (v * density).roundToInt()
 
@@ -145,28 +158,48 @@ class RobotOverlay(private val context: Context) {
     }
 
     fun setMood(m: RobotMood) {
-        mood = m
+        currentMood = m
     }
 
     /** Показывает реплику над роботом. null — убрать. */
     fun say(text: String?) {
+        bubble = text
+        syncTop()
+    }
+
+    /** Над роботом нужно место, пока там реплика или кружки: окно растёт вверх, а сам робот остаётся на месте. */
+    private fun syncTop() {
         val p = params ?: return
         val v = view ?: return
-        val had = bubble != null
-        bubble = text
-        val has = text != null
-        if (has && !had) {
-            p.y = max(0, p.y - bubbleH)
-            runCatching { wm.updateViewLayout(v, p) }
-        } else if (!has && had) {
-            p.y = min(screenH - robotH, p.y + bubbleH)
-            runCatching { wm.updateViewLayout(v, p) }
+        val want = bubble != null || menuOpen
+        if (want == topSpace) return
+        topSpace = want
+        p.y = if (want) max(0, p.y - bubbleH) else min(screenH - robotH, p.y + bubbleH)
+        runCatching { wm.updateViewLayout(v, p) }
+    }
+
+    private fun openMenu() {
+        moveJob?.cancel()
+        menuOpen = true
+        syncTop()
+        menuJob?.cancel()
+        menuJob = scope.launch {
+            delay(MENU_MS)
+            closeMenu(cancelTimer = false)
         }
+    }
+
+    private fun closeMenu(cancelTimer: Boolean = true) {
+        if (cancelTimer) menuJob?.cancel()
+        if (!menuOpen) return
+        menuOpen = false
+        syncTop()
     }
 
     /** Робот машет рукой и исчезает. */
     fun hide() {
         if (view == null) return
+        closeMenu()
         say(null)
         visible = false
         scope.launch {
@@ -183,19 +216,23 @@ class RobotOverlay(private val context: Context) {
     private fun removeNow() {
         wanderJob?.cancel()
         moveJob?.cancel()
+        menuJob?.cancel()
         view?.let { v -> runCatching { wm.removeView(v) } }
         view = null
         params = null
         owner?.stop()
         owner = null
         bubble = null
+        menuOpen = false
+        topSpace = false
+        holding = false
         walking = false
         visible = false
     }
 
     // ---------- движение ----------
 
-    private fun robotRect(x: Int = params?.x ?: 0, y: Int = params?.y ?: 0, withBubble: Boolean = bubble != null): Rect {
+    private fun robotRect(x: Int = params?.x ?: 0, y: Int = params?.y ?: 0, withBubble: Boolean = topSpace): Rect {
         val left = x + (winW - robotW) / 2
         val top = y + if (withBubble) bubbleH else 0
         return Rect(left, top, left + robotW, top + robotH)
@@ -218,7 +255,7 @@ class RobotOverlay(private val context: Context) {
             while (isActive) {
                 delay(700)
                 idleMs += 700
-                if (walking) continue
+                if (walking || menuOpen || holding) continue
                 val blocked = overlapScore(robotRect()) > 0
                 if (blocked || idleMs >= limit) {
                     idleMs = 0
@@ -233,7 +270,7 @@ class RobotOverlay(private val context: Context) {
     /** Выбирает место с наименьшим перекрытием элементов экрана, не рядом с текущим. */
     private fun pickSpot(): Pair<Int, Int> {
         val p = params ?: return 0 to 0
-        val hasBubble = bubble != null
+        val hasBubble = topSpace
         val margin = dp(8)
         val xs = listOf(margin, (screenW - winW) / 2, screenW - winW - margin)
         val top = dp(60)
@@ -303,7 +340,17 @@ class RobotOverlay(private val context: Context) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             val text = bubble
-            if (text != null) {
+            if (menuOpen) {
+                Row(
+                    Modifier.fillMaxWidth().height(BUBBLE_H_DP.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    MenuCircle("🔕", MENU_SILENT)
+                    MenuCircle("📝", MENU_NOTE)
+                    MenuCircle("⏰", MENU_REMIND)
+                }
+            } else if (text != null) {
                 Box(Modifier.fillMaxWidth().height(BUBBLE_H_DP.dp), contentAlignment = Alignment.BottomCenter) {
                     val shape = RoundedCornerShape(18.dp)
                     Box(
@@ -320,18 +367,46 @@ class RobotOverlay(private val context: Context) {
             }
             RobotView(
                 skin = skin,
-                mood = mood,
+                mood = currentMood,
                 walking = walking,
                 facingRight = facingRight,
                 modifier = Modifier
                     .width(ROBOT_W_DP.dp)
-                    .pointerInput(Unit) { detectTapGestures(onTap = { onTap() }) },
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onPress = {
+                                // Пока палец на роботе, он стоит на месте, иначе удержание не получится
+                                holding = true
+                                moveJob?.cancel()
+                                tryAwaitRelease()
+                                holding = false
+                            },
+                            onTap = { if (menuOpen) closeMenu() else onTap() },
+                            onLongPress = { openMenu() },
+                        )
+                    },
             )
         }
     }
 
+    @Composable
+    private fun MenuCircle(icon: String, action: String) {
+        Box(
+            Modifier
+                .size(54.dp)
+                .clip(CircleShape)
+                .background(CardColor.copy(alpha = 0.96f))
+                .border(1.5.dp, Color(skin.glow).copy(alpha = 0.9f), CircleShape)
+                .clickable {
+                    closeMenu()
+                    onMenu(action)
+                },
+            contentAlignment = Alignment.Center,
+        ) { Text(icon, fontSize = 26.sp) }
+    }
+
     /** Окну вне Activity нужен свой «жизненный цикл», иначе Compose не запустится. */
-    private class OverlayOwner : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
+    internal class OverlayOwner : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
         private val registry = LifecycleRegistry(this)
         private val controller = SavedStateRegistryController.create(this)
         private val store = ViewModelStore()
@@ -352,10 +427,14 @@ class RobotOverlay(private val context: Context) {
         }
     }
 
-    private companion object {
-        const val WINDOW_DP = 200
-        const val ROBOT_W_DP = 120
-        const val ROBOT_H_DP = 129
-        const val BUBBLE_H_DP = 76
+    companion object {
+        const val MENU_SILENT = "silent"
+        const val MENU_NOTE = "note"
+        const val MENU_REMIND = "remind"
+        private const val MENU_MS = 7_000L
+        private const val WINDOW_DP = 200
+        private const val ROBOT_W_DP = 120
+        private const val ROBOT_H_DP = 129
+        private const val BUBBLE_H_DP = 76
     }
 }

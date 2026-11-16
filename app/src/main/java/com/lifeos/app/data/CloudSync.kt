@@ -46,6 +46,10 @@ class CloudSync(
             voiceType = s.voiceType.name,
             goalTitle = s.goalTitle,
             goalProgress = s.goalProgress,
+            goalsJson = s.goalsJson,
+            memory = s.memory,
+            habitMetaJson = s.habitMetaJson,
+            navItems = s.navItems,
         )
         ref.set(
             mapOf(
@@ -53,6 +57,7 @@ class CloudSync(
                 "updatedAt" to System.currentTimeMillis(),
             ),
         ).await()
+        settings.update { it.copy(lastBackup = System.currentTimeMillis()) }
     }
 
     /** Возвращает true, если в облаке была копия и она загружена. */
@@ -76,6 +81,10 @@ class CloudSync(
                 voiceType = runCatching { VoiceType.valueOf(snap.voiceType) }.getOrDefault(it.voiceType),
                 goalTitle = snap.goalTitle.ifBlank { it.goalTitle },
                 goalProgress = snap.goalProgress,
+                goalsJson = snap.goalsJson.ifBlank { it.goalsJson },
+                memory = snap.memory.ifBlank { it.memory },
+                habitMetaJson = snap.habitMetaJson.ifBlank { it.habitMetaJson },
+                navItems = snap.navItems.ifBlank { it.navItems },
             )
         }
         true

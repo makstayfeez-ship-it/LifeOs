@@ -1,5 +1,6 @@
 package com.lifeos.app.assistant
 
+import android.accessibilityservice.AccessibilityButtonController
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Rect
 import android.os.SystemClock
@@ -22,10 +23,23 @@ object ScreenState {
  */
 class ScreenWatcherService : AccessibilityService() {
     private var lastScan = 0L
+    private var buttonCallback: AccessibilityButtonController.AccessibilityButtonCallback? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         ScreenState.connected = true
+        instance = this
+        // Кнопка или жест специальных возможностей (два пальца вверх от низа экрана, кнопка в панели навигации):
+        // открывает тихого помощника, строку для текста внизу экрана
+        runCatching {
+            val callback = object : AccessibilityButtonController.AccessibilityButtonCallback() {
+                override fun onClicked(controller: AccessibilityButtonController) {
+                    TextAssist.open(this@ScreenWatcherService)
+                }
+            }
+            accessibilityButtonController.registerAccessibilityButtonCallback(callback)
+            buttonCallback = callback
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -59,13 +73,21 @@ class ScreenWatcherService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
+        buttonCallback?.let { cb -> runCatching { accessibilityButtonController.unregisterAccessibilityButtonCallback(cb) } }
+        buttonCallback = null
         ScreenState.connected = false
+        instance = null
         ScreenState.obstacles.value = emptyList()
         return super.onUnbind(intent)
     }
 
-    private companion object {
-        const val MAX_NODES = 400
-        const val MAX_RECTS = 80
+    companion object {
+        private const val MAX_NODES = 400
+        private const val MAX_RECTS = 80
+
+        /** Работающий сервис (null, если пользователь не включил его). Нужен для кнопок «назад», «домой» и т. п. */
+        @Volatile
+        var instance: ScreenWatcherService? = null
+            private set
     }
 }

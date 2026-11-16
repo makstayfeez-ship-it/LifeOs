@@ -22,10 +22,12 @@ import kotlinx.coroutines.withTimeoutOrNull
 object BriefScheduler {
     private const val REQUEST = 4101
 
-    fun schedule(context: Context, hour: Int, minute: Int) {
+    const val ALL_DAYS = 127
+
+    fun schedule(context: Context, hour: Int, minute: Int, days: Int = ALL_DAYS) {
         val am = context.getSystemService(AlarmManager::class.java)
         val pi = pending(context)
-        val at = nextTrigger(hour, minute)
+        val at = nextTrigger(hour, minute, days)
         val exactAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms()
         runCatching {
             if (exactAllowed) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
@@ -37,8 +39,8 @@ object BriefScheduler {
         context.getSystemService(AlarmManager::class.java).cancel(pending(context))
     }
 
-    /** Ближайший момент hour:minute: сегодня, если ещё не прошло, иначе завтра. */
-    fun nextTrigger(hour: Int, minute: Int, now: Long = System.currentTimeMillis()): Long {
+    /** Ближайший момент hour:minute в один из выбранных дней недели (маска [days], бит 0 — понедельник): сегодня, если ещё не прошло, иначе позже. */
+    fun nextTrigger(hour: Int, minute: Int, days: Int = ALL_DAYS, now: Long = System.currentTimeMillis()): Long {
         val c = Calendar.getInstance().apply {
             timeInMillis = now
             set(Calendar.HOUR_OF_DAY, hour)
@@ -47,6 +49,13 @@ object BriefScheduler {
             set(Calendar.MILLISECOND, 0)
         }
         if (c.timeInMillis <= now) c.add(Calendar.DAY_OF_YEAR, 1)
+        val mask = if (days and ALL_DAYS == 0) ALL_DAYS else days and ALL_DAYS
+        repeat(7) {
+            // Calendar: воскресенье = 1, понедельник = 2 … Нам нужно: понедельник = 0 … воскресенье = 6
+            val idx = (c.get(Calendar.DAY_OF_WEEK) + 5) % 7
+            if (mask and (1 shl idx) != 0) return c.timeInMillis
+            c.add(Calendar.DAY_OF_YEAR, 1)
+        }
         return c.timeInMillis
     }
 
@@ -70,11 +79,20 @@ class MorningBriefReceiver : BroadcastReceiver() {
                 val s = c.settings.current()
                 if (!s.morningEnabled) return@launch
                 // Следующий запуск ставим сразу, чтобы сбой в сборке сводки не оборвал расписание
-                BriefScheduler.schedule(app, s.morningHour, s.morningMinute)
+                BriefScheduler.schedule(app, s.morningHour, s.morningMinute, s.morningDays)
+
+                // Сначала отмечаем, что обзор готов, и запускаем «слушателя» экрана: дальше всё работает, даже если сводка не соберётся
+                if (s.briefOnLock) {
+                    MorningState.markPending(app, resetShown = true)
+                    MorningWatchService.start(app)
+                }
 
                 val name = c.auth.user.value?.name.orEmpty()
-                val brief = withTimeoutOrNull(8_000) { c.brief.build(name, s) } ?: return@launch
-                notify(app, brief)
+                // Если погода не успела загрузиться, показываем обзор без неё, чем остаться вовсе без уведомления
+                val brief = withTimeoutOrNull(6_000) { c.brief.build(name, s) }
+                    ?: runCatching { c.brief.build(name, s.copy(briefWeather = false)) }.getOrNull()
+                    ?: return@launch
+                notify(app, brief, s.hideLockNotifs)
                 if (s.speakBrief) c.tts.speak(brief.spoken(), s)
             } finally {
                 pending.finish()
@@ -82,7 +100,7 @@ class MorningBriefReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun notify(context: Context, brief: Brief) {
+    private fun notify(context: Context, brief: Brief, hideOnLock: Boolean) {
         val open = PendingIntent.getActivity(
             context,
             0,
@@ -99,6 +117,19 @@ class MorningBriefReceiver : BroadcastReceiver() {
             .setStyle(NotificationCompat.BigTextStyle().bigText(lines.joinToString("\n")))
             .setContentIntent(open)
             .setAutoCancel(true)
+            .apply {
+                if (hideOnLock) {
+                    // На заблокированном экране вместо дел и сумм показывается нейтральный текст
+                    setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                    setPublicVersion(
+                        NotificationCompat.Builder(context, LifeApp.CHANNEL_BRIEF)
+                            .setSmallIcon(R.drawable.ic_notification)
+                            .setContentTitle("Утренний обзор")
+                            .setContentText("Разблокируйте телефон, чтобы посмотреть")
+                            .build(),
+                    )
+                }
+            }
             .build()
         runCatching { NotificationManagerCompat.from(context).notify(2001, n) }
     }
@@ -112,7 +143,25 @@ class BootReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.Default).launch {
             try {
                 val s = app.container.settings.current()
-                if (s.morningEnabled) BriefScheduler.schedule(app, s.morningHour, s.morningMinute)
+                if (s.morningEnabled) BriefScheduler.schedule(app, s.morningHour, s.morningMinute, s.morningDays)
+                // После перезагрузки обзор мог остаться непоказанным: снова ждём включения экрана
+                if (s.morningEnabled && s.briefOnLock && MorningState.shouldShow(app)) MorningWatchService.start(app)
+                com.lifeos.app.reminder.ReminderScheduler.rescheduleAll(app)
+                // Android не даёт запускать микрофон сам после перезагрузки: просим одно касание, чтобы помощник снова слушал
+                if (s.wakeEnabled && intent.action == Intent.ACTION_BOOT_COMPLETED) {
+                    val open = PendingIntent.getActivity(
+                        app, 20, Intent(app, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                    )
+                    val n = NotificationCompat.Builder(app, LifeApp.CHANNEL_ASSISTANT)
+                        .setSmallIcon(R.drawable.ic_notification)
+                        .setContentTitle("Включить помощника LifeOS")
+                        .setContentText("Телефон перезагружался. Нажмите, чтобы помощник снова слушал")
+                        .setContentIntent(open)
+                        .setAutoCancel(true)
+                        .build()
+                    runCatching { NotificationManagerCompat.from(app).notify(2002, n) }
+                }
             } finally {
                 pending.finish()
             }

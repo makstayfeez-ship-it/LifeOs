@@ -37,6 +37,10 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,7 +57,13 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lifeos.app.ui.NavDef
 import com.lifeos.app.ui.theme.Bg
+import com.lifeos.app.ui.theme.CardBorder
+import com.lifeos.app.ui.theme.LifePalette
+import com.lifeos.app.ui.theme.LifeStyle
+import com.lifeos.app.ui.theme.onAccent
+import com.lifeos.app.ui.theme.lifeBackground
 import com.lifeos.app.ui.theme.CardColor
 import com.lifeos.app.ui.theme.Disabled
 import com.lifeos.app.ui.theme.GrayText
@@ -69,7 +79,7 @@ fun LifeScreen(
     scroll: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(Modifier.fillMaxSize().background(Bg).statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().lifeBackground().statusBarsPadding()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -122,7 +132,7 @@ fun PillButton(
     ) {
         Text(
             text,
-            color = if (outlined && enabled) accent else Snow,
+            color = if (outlined && enabled) accent else if (enabled) onAccent(accent) else GrayText,
             style = MaterialTheme.typography.titleMedium,
         )
     }
@@ -147,6 +157,7 @@ fun LifeField(
             .fillMaxWidth()
             .clip(RoundedCornerShape(26.dp))
             .background(container)
+            .border(1.dp, CardBorder, RoundedCornerShape(26.dp))
             .padding(horizontal = 20.dp, vertical = 16.dp),
         textStyle = TextStyle(color = Snow, fontSize = 17.sp),
         cursorBrush = SolidColor(accent),
@@ -170,11 +181,12 @@ fun LifeChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Mod
         modifier
             .clip(shape)
             .background(if (selected) accent else CardColor)
+            .then(if (selected) Modifier else Modifier.border(1.dp, CardBorder, shape))
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, color = if (selected) Snow else GrayText, style = MaterialTheme.typography.bodyMedium)
+        Text(text, color = if (selected) onAccent(accent) else GrayText, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -189,7 +201,7 @@ fun LabelPill(text: String, filled: Boolean = true, modifier: Modifier = Modifie
             .then(if (filled) Modifier.background(accent) else Modifier.border(1.dp, accent, shape))
             .padding(horizontal = 12.dp, vertical = 4.dp),
     ) {
-        Text(text, color = if (filled) Snow else accent, style = MaterialTheme.typography.bodySmall)
+        Text(text, color = if (filled) onAccent(accent) else accent, style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -224,6 +236,7 @@ fun InfoCard(
         modifier
             .clip(shape)
             .background(CardColor)
+            .border(1.dp, CardBorder, shape)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(16.dp),
         content = content,
@@ -263,8 +276,9 @@ fun SwitchRow(title: String, checked: Boolean, onChecked: (Boolean) -> Unit, sub
             onCheckedChange = onChecked,
             colors = SwitchDefaults.colors(
                 checkedTrackColor = accent,
-                checkedThumbColor = Snow,
-                uncheckedTrackColor = CardColor,
+                checkedThumbColor = onAccent(accent),
+                checkedBorderColor = Color.Transparent,
+                uncheckedTrackColor = CardBorder,
                 uncheckedThumbColor = GrayText,
                 uncheckedBorderColor = Color.Transparent,
             ),
@@ -311,28 +325,109 @@ fun TextInputDialog(title: String, placeholder: String, onDismiss: () -> Unit, o
     }
 }
 
+/** Кнопка «Быстро добавить» для экранов, где «+» не живёт в нижнем меню (тёплый и светлый стили). Задаётся в AppNav. */
+val LocalQuickAdd = compositionLocalOf<() -> Unit> { {} }
+
+/** Нижнее меню: форма зависит от стиля. Тёмный: плавающая плашка с «+» посередине. Тёплый: плашка под значком. Светлый: цветная подпись. */
 @Composable
-fun LifeBottomBar(current: String?, onNavigate: (String) -> Unit, onPlus: () -> Unit) {
+fun LifeBottomBar(items: List<NavDef>, current: String?, onNavigate: (String) -> Unit, onPlus: () -> Unit) {
+    when (LifePalette.style) {
+        LifeStyle.DARK -> FloatingBar(items, current, onNavigate, onPlus)
+        LifeStyle.WARM -> FlatBar(items, current, onNavigate, pill = true)
+        LifeStyle.LIGHT -> FlatBar(items, current, onNavigate, pill = false)
+    }
+}
+
+@Composable
+private fun FloatingBar(items: List<NavDef>, current: String?, onNavigate: (String) -> Unit, onPlus: () -> Unit) {
     val accent = LocalAccent.current
-    Row(
+    val left = items.take((items.size + 1) / 2)
+    val right = items.drop(left.size)
+    val shape = RoundedCornerShape(30.dp)
+    Box(
         Modifier
             .fillMaxWidth()
             .background(Bg)
             .navigationBarsPadding()
-            .padding(horizontal = 4.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceAround,
+            .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp),
+        contentAlignment = Alignment.BottomCenter,
     ) {
-        BarItem("home", "Главная", Icons.Rounded.Home, current, onNavigate)
-        BarItem("apps", "Приложения", Icons.Rounded.Apps, current, onNavigate)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 20.dp)
+                .clip(shape)
+                .background(CardColor)
+                .border(1.dp, CardBorder, shape)
+                .padding(horizontal = 6.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceEvenly) {
+                left.forEach { BarItem(it.route, it.label, it.icon, current, onNavigate) }
+            }
+            Box(Modifier.width(64.dp))
+            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceEvenly) {
+                right.forEach { BarItem(it.route, it.label, it.icon, current, onNavigate) }
+            }
+        }
         Box(
-            Modifier.size(54.dp).clip(CircleShape).background(accent).clickable(onClick = onPlus),
+            Modifier
+                .align(Alignment.TopCenter)
+                .size(58.dp)
+                .clip(CircleShape)
+                .background(accent)
+                .border(4.dp, Bg, CircleShape)
+                .clickable(onClick = onPlus),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Rounded.Add, contentDescription = "Добавить", tint = Color.White, modifier = Modifier.size(30.dp))
+            Icon(Icons.Rounded.Add, contentDescription = "Добавить", tint = onAccent(accent), modifier = Modifier.size(30.dp))
         }
-        BarItem("reminders", "Уведомления", Icons.Rounded.Notifications, current, onNavigate)
-        BarItem("profile", "Профиль", Icons.Rounded.Person, current, onNavigate)
+    }
+}
+
+@Composable
+private fun FlatBar(items: List<NavDef>, current: String?, onNavigate: (String) -> Unit, pill: Boolean) {
+    val accent = LocalAccent.current
+    Column(Modifier.fillMaxWidth().background(CardColor).navigationBarsPadding()) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(CardBorder))
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceAround,
+        ) {
+            items.forEach { d ->
+                val sel = current == d.route
+                Column(
+                    Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).clickable { onNavigate(d.route) }.padding(vertical = 2.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    if (pill) {
+                        Box(
+                            Modifier
+                                .width(64.dp)
+                                .height(32.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(if (sel) accent else Color.Transparent),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(d.icon, d.label, tint = if (sel) onAccent(accent) else GrayText, modifier = Modifier.size(24.dp))
+                        }
+                    } else {
+                        Box(Modifier.height(32.dp), contentAlignment = Alignment.Center) {
+                            Icon(d.icon, d.label, tint = if (sel) accent else GrayText, modifier = Modifier.size(26.dp))
+                        }
+                    }
+                    Text(
+                        d.label,
+                        color = if (sel) (if (pill) Snow else accent) else GrayText,
+                        fontSize = 11.sp,
+                        fontWeight = if (sel) androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -341,10 +436,16 @@ private fun BarItem(route: String, label: String, icon: ImageVector, current: St
     val accent = LocalAccent.current
     val color = if (current == route) accent else GrayText
     Column(
-        Modifier.clip(RoundedCornerShape(14.dp)).clickable { onNavigate(route) }.padding(horizontal = 8.dp, vertical = 4.dp),
+        Modifier.clip(RoundedCornerShape(14.dp)).clickable { onNavigate(route) }.padding(horizontal = 6.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(26.dp))
-        Text(label, color = color, fontSize = 10.sp)
+        Text(
+            label,
+            color = color,
+            fontSize = 11.sp,
+            fontWeight = if (current == route) androidx.compose.ui.text.font.FontWeight.SemiBold else androidx.compose.ui.text.font.FontWeight.Normal,
+            maxLines = 1,
+        )
     }
 }

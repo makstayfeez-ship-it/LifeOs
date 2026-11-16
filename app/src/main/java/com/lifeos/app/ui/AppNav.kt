@@ -2,6 +2,7 @@ package com.lifeos.app.ui
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -27,19 +29,27 @@ import com.lifeos.app.ui.components.FormDialog
 import com.lifeos.app.ui.components.LifeBottomBar
 import com.lifeos.app.ui.components.LifeChip
 import com.lifeos.app.ui.components.LifeField
+import com.lifeos.app.ui.components.LocalQuickAdd
+import com.lifeos.app.ui.screens.AiSetupScreen
 import com.lifeos.app.ui.screens.AppsScreen
 import com.lifeos.app.ui.screens.AssistantChatScreen
+import com.lifeos.app.ui.screens.AssistantCheckScreen
 import com.lifeos.app.ui.screens.AssistantSettingsScreen
 import com.lifeos.app.ui.screens.AuthScreen
 import com.lifeos.app.ui.screens.CalendarScreen
-import com.lifeos.app.ui.screens.DocumentsScreen
-import com.lifeos.app.ui.screens.ExtrasScreen
 import com.lifeos.app.ui.screens.FinanceScreen
 import com.lifeos.app.ui.screens.HabitsScreen
 import com.lifeos.app.ui.screens.HomeScreen
 import com.lifeos.app.ui.screens.MorningScreen
 import com.lifeos.app.ui.screens.MorningSettingsScreen
+import com.lifeos.app.ui.screens.AccountScreen
+import com.lifeos.app.ui.screens.GoalsScreen
+import com.lifeos.app.ui.screens.NavbarSettingsScreen
+import com.lifeos.app.ui.screens.LockScreen
 import com.lifeos.app.ui.screens.NotesScreen
+import com.lifeos.app.ui.screens.OnboardingScreen
+import com.lifeos.app.ui.screens.SecurityScreen
+import com.lifeos.app.ui.screens.WidgetsScreen
 import com.lifeos.app.ui.screens.ProfileScreen
 import com.lifeos.app.ui.screens.RemindersScreen
 import com.lifeos.app.ui.screens.RobotShopScreen
@@ -49,7 +59,6 @@ import com.lifeos.app.ui.theme.Bg
 import com.lifeos.app.ui.theme.LifeTheme
 import java.time.LocalDate
 
-private val BarRoutes = setOf("home", "apps", "reminders", "profile")
 
 @Composable
 fun AppNav(vm: AppViewModel) {
@@ -58,13 +67,13 @@ fun AppNav(vm: AppViewModel) {
     val pending by vm.pendingRoute.collectAsState()
     val loggedIn = user != null
 
-    LifeTheme(settings.accent) {
+    LifeTheme(settings.accent, settings.glow) {
         val nav = rememberNavController()
         val entry by nav.currentBackStackEntryAsState()
         val route = entry?.destination?.route
         var showAdd by remember { mutableStateOf(false) }
 
-        // Вошли — на главную, вышли — на регистрацию
+        // Вошли — на главную (в первый раз сначала знакомство), вышли — на регистрацию
         LaunchedEffect(loggedIn) {
             val current = nav.currentDestination?.route
             if (!loggedIn && current != "auth") {
@@ -72,8 +81,14 @@ fun AppNav(vm: AppViewModel) {
                     popUpTo(0) { inclusive = true }
                     launchSingleTop = true
                 }
-            } else if (loggedIn && current == "auth") {
-                nav.navigate("home") { popUpTo(0) { inclusive = true } }
+            } else if (loggedIn && (current == null || current == "auth" || current == "home")) {
+                // Настройки читаем напрямую: пока они грузятся, в состоянии стоит значение по умолчанию
+                val done = runCatching { vm.c.settings.current().onboardingDone }.getOrDefault(true)
+                if (!done) {
+                    nav.navigate("welcome") { popUpTo(0) { inclusive = true } }
+                } else if (current == "auth") {
+                    nav.navigate("home") { popUpTo(0) { inclusive = true } }
+                }
             }
         }
 
@@ -88,14 +103,19 @@ fun AppNav(vm: AppViewModel) {
 
         val go: (String) -> Unit = { nav.navigate(it) { launchSingleTop = true } }
         val back: () -> Unit = { nav.popBackStack() }
-        val showBar = route in BarRoutes
+        val navItems = remember(settings.navItems) { NavCatalog.parse(settings.navItems) }
+        val showBar = route in NavCatalog.barRoutes(navItems)
 
+        val locked by vm.locked.collectAsState()
+        CompositionLocalProvider(LocalQuickAdd provides { showAdd = true }) {
+        Box {
         Scaffold(
             containerColor = Bg,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
                 if (showBar) {
                     LifeBottomBar(
+                        items = navItems.mapNotNull { NavCatalog.def(it) },
                         current = route,
                         onNavigate = { target ->
                             nav.navigate(target) {
@@ -116,6 +136,11 @@ fun AppNav(vm: AppViewModel) {
                     .then(if (showBar) Modifier else Modifier.navigationBarsPadding()),
             ) {
                 composable("auth") { AuthScreen(vm) }
+                composable("welcome") {
+                    OnboardingScreen(vm) {
+                        nav.navigate("home") { popUpTo(0) { inclusive = true } }
+                    }
+                }
                 composable("home") { HomeScreen(vm, go) }
                 composable("apps") { AppsScreen(go) }
                 composable("reminders") { RemindersScreen(vm) { go("calendar") } }
@@ -123,24 +148,34 @@ fun AppNav(vm: AppViewModel) {
 
                 composable("calendar") { CalendarScreen(vm, back) }
                 composable("finance") { FinanceScreen(vm, back) }
-                composable("documents") { DocumentsScreen(vm, back) }
                 composable("shopping") { ShoppingScreen(vm, back) }
                 composable("habits") { HabitsScreen(vm, back) }
                 composable("notes") { NotesScreen(vm, back) }
 
                 composable("assistant") { AssistantChatScreen(vm, back) { go("assistant_settings") } }
-                composable("assistant_settings") { AssistantSettingsScreen(vm, back) }
+                composable("assistant_settings") { AssistantSettingsScreen(vm, back, onCheck = { go("assistant_check") }, onAi = { go("ai_setup") }) }
+                composable("ai_setup") { AiSetupScreen(vm, back) }
                 composable("shop") { RobotShopScreen(vm, back) }
+                composable("assistant_check") { AssistantCheckScreen(vm, back, onAi = { go("ai_setup") }) }
 
                 composable("morning") { MorningScreen(vm, back) { go("morning_settings") } }
                 composable("morning_settings") { MorningSettingsScreen(vm, back) }
 
                 composable("theme") { ThemeScreen(vm, back) }
-                composable("extras") { ExtrasScreen(vm, back) }
+                composable("navbar") { NavbarSettingsScreen(vm, back) }
+                composable("goals") { GoalsScreen(vm, back) }
+                composable("widgets") { WidgetsScreen(back) }
+                composable("account") { AccountScreen(vm, back) }
+                composable("security") { SecurityScreen(vm, back) }
             }
         }
 
-        if (showAdd) QuickAddDialog(vm) { showAdd = false }
+        // Экран блокировки закрывает всё приложение, пока не введён PIN или не приложен палец
+        if (locked && loggedIn) LockScreen(vm)
+        }
+        }
+
+        if (showAdd && !(locked && loggedIn)) QuickAddDialog(vm) { showAdd = false }
     }
 }
 

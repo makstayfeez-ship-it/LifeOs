@@ -1,12 +1,25 @@
 package com.lifeos.app.ui.screens
 
 import androidx.compose.foundation.background
+import com.lifeos.app.ui.components.SwitchRow
+import com.lifeos.app.ui.rememberResumeTick
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -48,38 +61,82 @@ import com.lifeos.app.ui.theme.LocalAccent
 import com.lifeos.app.ui.theme.Snow
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.YearMonth
 
 private val ExpenseCategories = listOf("Еда", "Покупки", "Транспорт", "Другое")
+private val IncomeCategories = listOf("Зарплата", "Подработка", "Подарок", "Другое")
+
+private data class Period(val label: String, val days: Int, val bucketDays: Int)
+
+private val Periods = listOf(
+    Period("1Н", 7, 1),
+    Period("1М", 30, 1),
+    Period("3М", 90, 3),
+    Period("6М", 180, 7),
+    Period("1Г", 365, 14),
+)
 
 // ---------------------------------------------------------------- Финансы
 
 @Composable
 fun FinanceScreen(vm: AppViewModel, onBack: () -> Unit) {
-    val expenses by vm.expenses.collectAsState()
+    val all by vm.expenses.collectAsState()
     val accent = LocalAccent.current
     var dialog by remember { mutableStateOf(false) }
+    var incomeTab by remember { mutableStateOf(false) }
+    var periodIndex by remember { mutableStateOf(1) }
+    val period = Periods[periodIndex]
 
     val zone = ZoneId.systemDefault()
-    val month = YearMonth.now()
-    val from = month.atDay(1).atStartOfDay(zone).toInstant().toEpochMilli()
-    val to = month.plusMonths(1).atDay(1).atStartOfDay(zone).toInstant().toEpochMilli()
-    val thisMonth = expenses.filter { it.createdAt in from until to }
-    val total = thisMonth.sumOf { it.amountRub }
-    val byCategory = thisMonth
+    val today = LocalDate.now()
+    val from = today.minusDays(period.days - 1L).atStartOfDay(zone).toInstant().toEpochMilli()
+    val inPeriod = all.filter { it.createdAt >= from }
+    val shown = inPeriod.filter { it.income == incomeTab }
+    val total = shown.sumOf { it.amountRub }
+    val balance = inPeriod.filter { it.income }.sumOf { it.amountRub } - inPeriod.filter { !it.income }.sumOf { it.amountRub }
+
+    val byCategory = shown
         .groupBy { it.category }
         .mapValues { (_, list) -> list.sumOf { it.amountRub } }
         .toList()
         .sortedByDescending { it.second }
 
+    // Баланс по дням: пополнение поднимает линию, расход опускает, ноль на середине графика
+    val buckets = (period.days + period.bucketDays - 1) / period.bucketDays
+    val deltas = LongArray(buckets)
+    inPeriod.forEach { e ->
+        val day = java.time.Instant.ofEpochMilli(e.createdAt).atZone(zone).toLocalDate()
+        val offset = java.time.temporal.ChronoUnit.DAYS.between(today.minusDays(period.days - 1L), day).toInt()
+        if (offset in 0 until period.days) deltas[offset / period.bucketDays] += if (e.income) e.amountRub else -e.amountRub
+    }
+    val points = LongArray(buckets)
+    var running = 0L
+    for (i in 0 until buckets) {
+        running += deltas[i]
+        points[i] = running
+    }
+
     LifeScreen("Финансы", onBack = onBack) {
-        OutlineCard(Modifier.fillMaxWidth()) {
-            Text("Расходы · ${Fmt.monthYear(LocalDate.now())}", color = GrayText)
-            Text(Fmt.money(total), color = Snow, style = MaterialTheme.typography.displaySmall)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LifeChip("Расходы", !incomeTab, { incomeTab = false })
+            LifeChip("Доходы", incomeTab, { incomeTab = true })
         }
 
+        OutlineCard(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+            Text(if (incomeTab) "Доходы за период" else "Расходы за период", color = GrayText)
+            Text(Fmt.money(total), color = Snow, style = MaterialTheme.typography.displaySmall)
+            Text(
+                "Баланс: " + (if (balance > 0) "+" else "") + Fmt.money(balance),
+                color = if (balance >= 0) accent else Color(0xFFFF6B6B),
+            )
+        }
+
+        Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Periods.forEachIndexed { i, p -> LifeChip(p.label, periodIndex == i, { periodIndex = i }) }
+        }
+        BalanceChart(points, Modifier.fillMaxWidth().padding(top = 12.dp).height(150.dp))
+
         SectionTitle("По категориям")
-        if (byCategory.isEmpty()) EmptyHint("В этом месяце расходов пока нет")
+        if (byCategory.isEmpty()) EmptyHint(if (incomeTab) "Доходов за этот период нет" else "Расходов за этот период нет")
         byCategory.forEach { (cat, sum) ->
             val share = if (total == 0L) 0f else sum.toFloat() / total
             Column(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
@@ -93,11 +150,16 @@ fun FinanceScreen(vm: AppViewModel, onBack: () -> Unit) {
             }
         }
 
-        PillButton("+ Добавить расход", { dialog = true }, Modifier.fillMaxWidth().padding(vertical = 12.dp), outlined = true)
+        PillButton(
+            if (incomeTab) "+ Добавить доход" else "+ Добавить расход",
+            { dialog = true },
+            Modifier.fillMaxWidth().padding(vertical = 12.dp),
+            outlined = true,
+        )
 
         SectionTitle("История")
-        if (expenses.isEmpty()) EmptyHint("Скажите помощнику: «потратил 500 рублей на еду»")
-        expenses.take(30).forEach { e ->
+        if (shown.isEmpty()) EmptyHint("Скажите помощнику: «потратил 500 рублей на еду»")
+        shown.take(40).forEach { e ->
             InfoCard(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -107,7 +169,7 @@ fun FinanceScreen(vm: AppViewModel, onBack: () -> Unit) {
                             Text(Fmt.dateTime(e.createdAt), color = GrayText, style = MaterialTheme.typography.bodySmall)
                         }
                     }
-                    Text(Fmt.money(e.amountRub), color = Snow, style = MaterialTheme.typography.titleMedium)
+                    Text((if (e.income) "+" else "") + Fmt.money(e.amountRub), color = Snow, style = MaterialTheme.typography.titleMedium)
                     IconButton(onClick = { vm.deleteExpense(e) }) { Icon(Icons.Rounded.Close, "Удалить", tint = GrayText) }
                 }
             }
@@ -115,101 +177,88 @@ fun FinanceScreen(vm: AppViewModel, onBack: () -> Unit) {
     }
 
     if (dialog) {
+        val categories = if (incomeTab) IncomeCategories else ExpenseCategories
         var title by remember { mutableStateOf("") }
         var amount by remember { mutableStateOf("") }
-        var category by remember { mutableStateOf(ExpenseCategories.first()) }
+        var category by remember { mutableStateOf(categories.first()) }
         val sum = amount.toLongOrNull()
         FormDialog(
-            title = "Новый расход",
+            title = if (incomeTab) "Новый доход" else "Новый расход",
             onDismiss = { dialog = false },
             onConfirm = {
-                vm.addExpense(title.trim().ifBlank { category }, category, sum ?: 0)
+                vm.addExpense(title.trim().ifBlank { category }, category, sum ?: 0, incomeTab)
                 dialog = false
             },
             confirmEnabled = sum != null && sum > 0,
         ) {
             LifeField(amount, { amount = it.filter(Char::isDigit).take(9) }, "Сумма, ₽", keyboardType = KeyboardType.Number)
-            LifeField(title, { title = it }, "На что (необязательно)")
+            LifeField(title, { title = it }, "Комментарий (необязательно)")
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ExpenseCategories.forEach { c -> LifeChip(c, category == c, { category = c }) }
+                categories.forEach { c -> LifeChip(c, category == c, { category = c }) }
             }
         }
     }
 }
 
-// ---------------------------------------------------------------- Документы
-
-private val DocCategories = listOf("Паспорта", "Чеки", "Гарантии", "Другое")
-
+/**
+ * График баланса. Ноль посередине: пополнение уводит линию вверх, расход вниз. Пока баланс в плюсе, линия выше середины
+ * (расход лишь опускает её ближе к середине), в минусе ниже. Над нулём линия цвета акцента, под нулём красная.
+ */
 @Composable
-fun DocumentsScreen(vm: AppViewModel, onBack: () -> Unit) {
-    val docs by vm.documents.collectAsState()
-    var filter by remember { mutableStateOf<String?>(null) }
-    var dialog by remember { mutableStateOf(false) }
+private fun BalanceChart(points: LongArray, modifier: Modifier = Modifier) {
     val accent = LocalAccent.current
+    val red = Color(0xFFFF6B6B)
+    val limit = (points.maxOfOrNull { kotlin.math.abs(it) } ?: 0L).coerceAtLeast(1L)
+    val hasData = points.any { it != 0L }
+    Box(modifier.clip(RoundedCornerShape(18.dp)).background(CardColor)) {
+        Canvas(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 18.dp)) {
+            val n = points.size
+            if (n < 2) return@Canvas
+            val mid = size.height / 2f
+            val stepX = size.width / (n - 1)
+            fun y(v: Float) = mid - v / limit * mid
 
-    val shown = docs.filter { filter == null || it.category == filter }
-
-    LifeScreen("Документы", onBack = onBack) {
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            LifeChip("Все", filter == null, { filter = null })
-            DocCategories.forEach { c -> LifeChip(c, filter == c, { filter = c }) }
-        }
-
-        if (shown.isEmpty()) EmptyHint("Здесь будут ваши документы: паспорта, чеки, гарантии")
-        Column(Modifier.padding(top = 14.dp)) {
-            shown.chunked(2).forEach { row ->
-                Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    row.forEach { d ->
-                        OutlineCard(Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.Top) {
-                                Text(d.title, color = Snow, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                                IconButton(onClick = { vm.deleteDocument(d) }, modifier = Modifier.size(24.dp)) {
-                                    Icon(Icons.Rounded.Close, "Удалить", tint = GrayText, modifier = Modifier.size(18.dp))
-                                }
-                            }
-                            LabelPill(d.category, modifier = Modifier.padding(top = 8.dp))
-                            Text("Добавлен ${Fmt.date(d.addedAt)}", color = GrayText, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
-                        }
-                    }
-                    if (row.size == 1) Box(Modifier.weight(1f))
+            // линия нуля
+            drawLine(
+                Color(0x66FFFFFF), Offset(0f, mid), Offset(size.width, mid), strokeWidth = 1.5f,
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f)),
+            )
+            // заливка между линией баланса и нулём
+            val fill = Path().apply {
+                moveTo(0f, mid)
+                points.forEachIndexed { i, v -> lineTo(stepX * i, y(v.toFloat())) }
+                lineTo(size.width, mid)
+                close()
+            }
+            clipRect(top = 0f, bottom = mid) { drawPath(fill, accent.copy(alpha = 0.18f)) }
+            clipRect(top = mid, bottom = size.height) { drawPath(fill, red.copy(alpha = 0.18f)) }
+            // сама линия: отрезки над нулём одним цветом, под нулём другим, пересечение нуля делим пополам
+            fun seg(xa: Float, va: Float, xb: Float, vb: Float) {
+                drawLine(
+                    if (va + vb >= 0f) accent else red,
+                    Offset(xa, y(va)), Offset(xb, y(vb)),
+                    strokeWidth = 4f, cap = StrokeCap.Round,
+                )
+            }
+            for (i in 0 until n - 1) {
+                val x0 = stepX * i
+                val x1 = stepX * (i + 1)
+                val v0 = points[i].toFloat()
+                val v1 = points[i + 1].toFloat()
+                if (v0 * v1 < 0f) {
+                    val xm = x0 + (x1 - x0) * (v0 / (v0 - v1))
+                    seg(x0, v0, xm, 0f)
+                    seg(xm, 0f, x1, v1)
+                } else {
+                    seg(x0, v0, x1, v1)
                 }
             }
+            if (n <= 31) points.forEachIndexed { i, v -> drawCircle(if (v >= 0) accent else red, 4f, Offset(stepX * i, y(v.toFloat()))) }
         }
-
-        PillButton("+ Добавить документ", { dialog = true }, Modifier.fillMaxWidth().padding(vertical = 8.dp), outlined = true)
-
-        InfoCard(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Lock, null, tint = accent, modifier = Modifier.size(32.dp))
-                Column(Modifier.padding(start = 12.dp)) {
-                    Text("Безопасное хранение", color = Snow, style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Сейчас хранятся названия и категории документов. Загрузка фото и файлов с шифрованием будет следующим шагом.",
-                        color = GrayText,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            }
-        }
-    }
-
-    if (dialog) {
-        var title by remember { mutableStateOf("") }
-        var category by remember { mutableStateOf(DocCategories.first()) }
-        FormDialog(
-            title = "Новый документ",
-            onDismiss = { dialog = false },
-            onConfirm = {
-                vm.addDocument(title.trim(), category)
-                dialog = false
-            },
-            confirmEnabled = title.isNotBlank(),
-        ) {
-            LifeField(title, { title = it }, "Название")
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                DocCategories.forEach { c -> LifeChip(c, category == c, { category = c }) }
-            }
+        if (hasData) {
+            Text("+" + Fmt.money(limit), color = GrayText, fontSize = 10.sp, modifier = Modifier.align(Alignment.TopStart).padding(start = 8.dp, top = 4.dp))
+            Text("0", color = GrayText, fontSize = 10.sp, modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp, bottom = 14.dp))
+            Text("−" + Fmt.money(limit), color = GrayText, fontSize = 10.sp, modifier = Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = 4.dp))
         }
     }
 }

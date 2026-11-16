@@ -11,6 +11,8 @@ data class NoteEntity(
     val text: String,
     val isVoice: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
+    /** Путь к аудиозаписи в памяти приложения (для заметок-записей звука). */
+    val audioPath: String? = null,
 )
 
 /** И событие (isEvent = true), и задача. День хранится как LocalDate.toEpochDay(). */
@@ -34,6 +36,8 @@ data class ExpenseEntity(
     val category: String,
     val amountRub: Long,
     val createdAt: Long = System.currentTimeMillis(),
+    /** true — это доход, а не расход. */
+    val income: Boolean = false,
 )
 
 @Serializable
@@ -58,7 +62,7 @@ data class HabitLogEntity(
     val epochDay: Long,
 )
 
-/** Пока это записи о документах (название и категория). Файлы и шифрование — следующий этап. */
+/** Документ: название, категория и (по желанию) приложенный файл, который хранится в зашифрованном виде. */
 @Serializable
 @Entity(tableName = "documents")
 data class DocumentEntity(
@@ -66,6 +70,9 @@ data class DocumentEntity(
     val title: String,
     val category: String,
     val addedAt: Long = System.currentTimeMillis(),
+    /** Имя зашифрованного файла в хранилище документов, если к записи приложен файл. */
+    val filePath: String? = null,
+    val mime: String? = null,
 )
 
 /** Всё, что уходит в облачную копию пользователя. */
@@ -84,4 +91,8 @@ data class Snapshot(
     val voiceType: String = "",
     val goalTitle: String = "",
     val goalProgress: Int = 0,
+    val goalsJson: String = "",
+    val memory: String = "",
+    val habitMetaJson: String = "",
+    val navItems: String = "",
 )
