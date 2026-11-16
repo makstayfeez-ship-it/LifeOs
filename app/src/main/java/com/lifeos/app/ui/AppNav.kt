@@ -30,6 +30,7 @@ import com.lifeos.app.ui.components.LifeBottomBar
 import com.lifeos.app.ui.components.LifeChip
 import com.lifeos.app.ui.components.LifeField
 import com.lifeos.app.ui.components.LocalQuickAdd
+import com.lifeos.app.ui.screens.AiSetupScreen
 import com.lifeos.app.ui.screens.AppsScreen
 import com.lifeos.app.ui.screens.AssistantChatScreen
 import com.lifeos.app.ui.screens.AssistantCheckScreen
